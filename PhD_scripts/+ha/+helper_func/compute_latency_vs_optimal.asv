@@ -1,0 +1,103 @@
+function S = compute_latency_vs_optimal(lick_times, stim_on_times, reward_times, reward_avaliblility_time, outlier_threshold)
+
+% COMPUTE_LATENCY_VS_OPTIMAL
+%   For each trial, compute:
+%     - latency_to_first_lick  : first lick after stim onset
+%     - diff_from_optimal      : |reward_time - stim_center_time|
+%   Then remove outliers (per metric) and return per-day averages.
+%
+% Inputs:
+%   lick_times         : [nLicks x 1] numeric or datetime
+%   stim_on_times      : [nTrials x 1] numeric or datetime
+%   reward_times       : [nTrials x 1] numeric or datetime (NaN allowed)
+%   stim_center_times  : [nTrials x 1] numeric or datetime (NaN allowed)
+%   outlier_threshold  : scalar, e.g. 3 (stds). Default = 3 if omitted/empty.
+%
+% Outputs (struct S):
+%   .latency_to_first_lick     [nTrials x 1]
+%   .diff_from_optimal_reward  [nTrials x 1]
+%   .is_outlier_latency        [nTrials x 1 logical]
+%   .is_outlier_diff           [nTrials x 1 logical]
+%   .latency_filtered          [<=nTrials x 1] (outliers removed)
+%   .diff_filtered             [<=nTrials x 1] (outliers removed)
+%   .avg_latency               scalar (mean of latency_filtered, omitnan)
+%   .avg_diff                  scalar (mean of diff_filtered, omitnan)
+%   .mean_latency, .std_latency, .mean_diff, .std_diff  (for reference)
+
+    if nargin < 5 || isempty(outlier_threshold)
+        outlier_threshold = 3;
+    end
+
+    % Ensure column vectors
+    lick_times        = lick_times(:);
+    stim_on_times     = stim_on_times(:);
+    reward_times      = reward_times(:);
+    reward_avaliblility_time = reward_avaliblility_time(:);
+
+    nTrials = numel(stim_on_times);
+
+    latency_to_first_lick    = nan(nTrials,1);
+    diff_from_optimal_reward = nan(nTrials,1);
+
+
+    for tr = 1:nTrials
+        % First-lick latency after stim onset
+
+        dt = lick_times - stim_on_times(tr);
+        dt = dt(dt > 0);
+
+        if ~isempty(dt) % calculate latency to lick from stim onset
+            latency_to_first_lick(tr) = min(dt);
+        end
+
+        % reward - center latency calculation
+       
+        if ~(isnan(reward_times(tr)) && ~(isnan(reward_avaliblility_time(tr))))
+                diff_from_optimal_reward(tr) = abs(reward_times(tr) - reward_avaliblility_time(tr));
+        end
+    end
+
+    % Means/SDs (NaN-safe)
+    mean_diff = mean(diff_from_optimal_reward, 'omitnan');
+    std_diff  = std (diff_from_optimal_reward, 'omitnan');
+
+    mean_lat  = mean(latency_to_first_lick, 'omitnan');
+    std_lat   = std (latency_to_first_lick, 'omitnan');
+
+    % Outlier masks (guard against zero/NaN std)
+    if isfinite(std_diff) && std_diff > 0
+        is_outlier_diff = abs(diff_from_optimal_reward - mean_diff) > outlier_threshold * std_diff;
+    else
+        is_outlier_diff = false(nTrials,1);
+    end
+
+    % NOTE: bug fix vs your snippet — compare latency to its OWN mean/std
+    if isfinite(std_lat) && std_lat > 0
+        is_outlier_latency = abs(latency_to_first_lick - mean_lat) > outlier_threshold * std_lat;
+    else
+        is_outlier_latency = false(nTrials,1);
+    end
+
+    % Filtered vectors
+    diff_filtered    = diff_from_optimal_reward(~is_outlier_diff);
+    latency_filtered = latency_to_first_lick(~is_outlier_latency);
+
+    % Per-day averages
+    avg_diff = mean(diff_filtered,    'omitnan');
+    avg_lat  = mean(latency_filtered, 'omitnan');
+
+    % Pack outputs
+    S = struct( ...
+        'latency_to_first_lick',    latency_to_first_lick, ...
+        'diff_from_optimal_reward', diff_from_optimal_reward, ...
+        'is_outlier_latency',       is_outlier_latency, ...
+        'is_outlier_diff',          is_outlier_diff, ...
+        'latency_filtered',         latency_filtered, ...
+        'diff_filtered',            diff_filtered, ...
+        'avg_latency',              avg_lat, ...
+        'avg_diff',                 avg_diff, ...
+        'mean_latency',             mean_lat, ...
+        'std_latency',              std_lat, ...
+        'mean_diff',                mean_diff, ...
+        'std_diff',                 std_diff );
+end

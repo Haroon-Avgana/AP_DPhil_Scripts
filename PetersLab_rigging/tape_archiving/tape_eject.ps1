@@ -1,0 +1,1 @@
+﻿& "C:\Program Files\LTFS\LtfsCmdEject.exe" T

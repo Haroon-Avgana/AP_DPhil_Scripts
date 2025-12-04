@@ -32,7 +32,7 @@
             </Expression>
             <Expression xsi:type="Combinator">
               <Combinator xsi:type="FloatProperty">
-                <Value>20</Value>
+                <Value>60</Value>
               </Combinator>
             </Expression>
             <Expression xsi:type="rx:BehaviorSubject">
@@ -442,7 +442,7 @@
               <Combinator xsi:type="p1:CreateGratingTrial">
                 <p1:Delay>0</p1:Delay>
                 <p1:Duration>0.5</p1:Duration>
-                <p1:Diameter>20</p1:Diameter>
+                <p1:Diameter>60</p1:Diameter>
                 <p1:X>0</p1:X>
                 <p1:Y>0</p1:Y>
                 <p1:Contrast>1</p1:Contrast>
@@ -529,11 +529,11 @@
                     <LocationX>0</LocationX>
                     <LocationY>0</LocationY>
                     <Layer>1</Layer>
-                    <ExtentX>20</ExtentX>
-                    <ExtentY>20</ExtentY>
+                    <ExtentX>60</ExtentX>
+                    <ExtentY>60</ExtentY>
                     <SpatialFrequency>0.1</SpatialFrequency>
                     <TemporalFrequency>0</TemporalFrequency>
-                    <Phase>4297.18359</Phase>
+                    <Phase>-2922.08472</Phase>
                     <Angle>0</Angle>
                     <SquareWave>false</SquareWave>
                     <Contrast>1</Contrast>
@@ -646,7 +646,7 @@
                   </Expression>
                   <Expression xsi:type="Combinator">
                     <Combinator xsi:type="gl:Timer">
-                      <gl:DueTime>PT1.7S</gl:DueTime>
+                      <gl:DueTime>PT1.1S</gl:DueTime>
                     </Combinator>
                   </Expression>
                   <Expression xsi:type="Combinator">

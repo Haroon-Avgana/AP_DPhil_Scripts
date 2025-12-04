@@ -7,7 +7,7 @@ set(groot, "defaultFigureWindowStyle", "normal");
 %% Load variables and define colours
 
 load("C:\Users\havgana\Desktop\DPhil\packaged_data\combined_sig_day_all_protocols_big_stim_and_post_static_filtered_03_12_25.mat") % sig days
-load("C:\Users\havgana\Desktop\DPhil\packaged_data\behaviour_data_all_animals_all_protocols_03_12_25.mat") % behaviour
+load("C:\Users\havgana\Desktop\DPhil\packaged_data\behaviour_structure_all_animals_all_protocols_04_12_25.mat") % behaviour
 
 % set up two custom colors
 cLearner    = [0 0.6 0];   % dark green

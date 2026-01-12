@@ -11,8 +11,8 @@ set(groot, "defaultFigureWindowStyle", "normal");
 
 %% Load variables and define colours
 
-load("C:\Users\havgana\Desktop\DPhil\packaged_data\combined_sig_day_all_protocols_big_stim_and_post_static_filtered_03_12_25.mat") % sig days
-load("C:\Users\havgana\Desktop\DPhil\packaged_data\behaviour_structure_all_animals_all_protocols_04_12_25.mat") % behaviour
+load("C:\Users\havgana\Desktop\DPhil\packaged_data\behaviour_structure_all_animals.mat") % sig days
+load("C:\Users\havgana\Desktop\DPhil\packaged_data\combined_sig_day_all_protocols.mat") % behaviour
 
 % set up two custom colors
 cLearner    = [0 0.6 0];   % dark green
@@ -23,24 +23,35 @@ bin_size = 0.15; % Size of time bins in seconds
 
 % Define time bins for PSTH
 time_bins = lick_detection_time_window(1):bin_size:lick_detection_time_window(2);
-% bin_centers = time_bins(1:end-1) + bin_size / 2;
+bin_centers = time_bins(1:end-1) + bin_size / 2;
 
 % Define the surround time based on the packed data
 surround_time = [-5,5];
 surround_sample_rate = 100;
 surround_time_points = surround_time(1):1/surround_sample_rate:surround_time(2);
 
+%% Create indexing variable for workflows
+
+% make protocol index (n all days x workflow number ordered)
+workflow_animal = cellfun(@(x) {x.workflow},{behaviour_data.recording_day},'uni',false);
+workflow_cat = grp2idx(horzcat(workflow_animal{:}));
+
+% Create a logical learning index variable (n all days x [0,1])
+learning_index_animal = vertcat(combined_sig_day_all_protocols{:});
 
 
-%%
 
-mPFC_plus_grp = {'HA005','HA008','HA010','HA011','HA012'};
-mPFC_minus_grp = {'DS017','HA007','HA009','HA014','HA015'};
-non_learners_grp = {'HA006','HA013','AP030','AP031','AP032'};
+%% Plots MEAN pre-post PSTHs seperated by groups for CS+ and CS- and non-learners 
+
+
+mPFC_plus_grp = {'HA005','HA008','HA010','HA012'};
+mPFC_minus_grp = {'DS017','HA007','HA009','HA011','HA014','HA015'};
+non_learners_grp = {'AP030','AP031','AP032'};
 
 all_ids = {behaviour_data.animal_id};
 
-target_workflow = {'visual_operant_lick_two_stim_static'};
+target_workflow = {'visual_operant_lick_two_stim_right_move_big_stim'};
+ 
 
 % Pre-allocate containers for THREE groups
 % Store session-level data (no averaging yet)
@@ -51,6 +62,12 @@ non_learner_sessions = struct('plus_pre', {}, 'plus_post', {}, 'minus_pre', {}, 
 % Define fields
 rew_field = 'avg_psth_rewarded_stim_on';
 non_rew_field = 'avg_psth_non_rewarded_stim_on';
+
+% rew_field= 'avg_psth_rewarded_stim_final_position';
+% non_rew_field= 'avg_psth_non_rewarded_stim_final_position';
+
+
+
 
 % Loop over animals
 for ai = 1:numel(all_ids)
@@ -114,108 +131,121 @@ for ai = 1:numel(all_ids)
     end
 end
 
-%% Hierarchical averaging: Sessions → Pre/Post → Animals → Group
-
-function [group_mean, group_sem] = compute_group_stats(group_sessions, condition)
-    % condition: 'plus_pre', 'plus_post', 'minus_pre', 'minus_post'
-    
-    n_animals = length(group_sessions);
-    animal_means = [];
-    animal_sems = [];
-    
-    for a = 1:n_animals
-        sessions = group_sessions(a).(condition);
-        
-        if isempty(sessions)
-            continue;
-        end
-        
-        % Step 1: Average across sessions for this animal
-        animal_mean = mean(sessions, 1, 'omitnan');
-        
-        % Step 2: SEM across sessions for this animal
-        animal_sem = std(sessions, 0, 1, 'omitnan') / sqrt(size(sessions, 1));
-        
-        animal_means = [animal_means; animal_mean];
-        animal_sems = [animal_sems; animal_sem];
-    end
-    
-    % Step 3: Average across animals
-    group_mean = mean(animal_means, 1, 'omitnan');
-    
-    % Step 4: Propagate SEM across animals
-    % Pooled variance: mean of squared SEMs (converts SEM back to variance, averages, converts back)
-    pooled_var = mean(animal_sems.^2, 1, 'omitnan');
-    group_sem = sqrt(pooled_var) / sqrt(size(animal_means, 1));
-end
 
 % Compute stats for all groups and conditions
-[mean_mPFC_plus_pre_CS_plus, sem_mPFC_plus_pre_CS_plus] = compute_group_stats(mPFC_plus_sessions, 'plus_pre');
-[mean_mPFC_plus_post_CS_plus, sem_mPFC_plus_post_CS_plus] = compute_group_stats(mPFC_plus_sessions, 'plus_post');
-[mean_mPFC_plus_pre_CS_minus, sem_mPFC_plus_pre_CS_minus] = compute_group_stats(mPFC_plus_sessions, 'minus_pre');
-[mean_mPFC_plus_post_CS_minus, sem_mPFC_plus_post_CS_minus] = compute_group_stats(mPFC_plus_sessions, 'minus_post');
+[mean_mPFC_plus_pre_CS_plus, sem_mPFC_plus_pre_CS_plus] = ha.helper_func.compute_group_stats(mPFC_plus_sessions, 'plus_pre');
+[mean_mPFC_plus_post_CS_plus, sem_mPFC_plus_post_CS_plus] = ha.helper_func.compute_group_stats(mPFC_plus_sessions, 'plus_post');
+[mean_mPFC_plus_pre_CS_minus, sem_mPFC_plus_pre_CS_minus] = ha.helper_func.compute_group_stats(mPFC_plus_sessions, 'minus_pre');
+[mean_mPFC_plus_post_CS_minus, sem_mPFC_plus_post_CS_minus] = ha.helper_func.compute_group_stats(mPFC_plus_sessions, 'minus_post');
 
-[mean_mPFC_minus_pre_CS_plus, sem_mPFC_minus_pre_CS_plus] = compute_group_stats(mPFC_minus_sessions, 'plus_pre');
-[mean_mPFC_minus_post_CS_plus, sem_mPFC_minus_post_CS_plus] = compute_group_stats(mPFC_minus_sessions, 'plus_post');
-[mean_mPFC_minus_pre_CS_minus, sem_mPFC_minus_pre_CS_minus] = compute_group_stats(mPFC_minus_sessions, 'minus_pre');
-[mean_mPFC_minus_post_CS_minus, sem_mPFC_minus_post_CS_minus] = compute_group_stats(mPFC_minus_sessions, 'minus_post');
+[mean_mPFC_minus_pre_CS_plus, sem_mPFC_minus_pre_CS_plus] = ha.helper_func.compute_group_stats(mPFC_minus_sessions, 'plus_pre');
+[mean_mPFC_minus_post_CS_plus, sem_mPFC_minus_post_CS_plus] = ha.helper_func.compute_group_stats(mPFC_minus_sessions, 'plus_post');
+[mean_mPFC_minus_pre_CS_minus, sem_mPFC_minus_pre_CS_minus] = ha.helper_func.compute_group_stats(mPFC_minus_sessions, 'minus_pre');
+[mean_mPFC_minus_post_CS_minus, sem_mPFC_minus_post_CS_minus] = ha.helper_func.compute_group_stats(mPFC_minus_sessions, 'minus_post');
 
-[mean_non_learner_pre_CS_plus, sem_non_learner_pre_CS_plus] = compute_group_stats(non_learner_sessions, 'plus_pre');
-[mean_non_learner_post_CS_plus, sem_non_learner_post_CS_plus] = compute_group_stats(non_learner_sessions, 'plus_post');
-[mean_non_learner_pre_CS_minus, sem_non_learner_pre_CS_minus] = compute_group_stats(non_learner_sessions, 'minus_pre');
-[mean_non_learner_post_CS_minus, sem_non_learner_post_CS_minus] = compute_group_stats(non_learner_sessions, 'minus_post');
+[mean_non_learner_pre_CS_plus, sem_non_learner_pre_CS_plus] = ha.helper_func.compute_group_stats(non_learner_sessions, 'plus_pre');
+[mean_non_learner_post_CS_plus, sem_non_learner_post_CS_plus] = ha.helper_func.compute_group_stats(non_learner_sessions, 'plus_post');
+[mean_non_learner_pre_CS_minus, sem_non_learner_pre_CS_minus] = ha.helper_func.compute_group_stats(non_learner_sessions, 'minus_pre');
+[mean_non_learner_post_CS_minus, sem_non_learner_post_CS_minus] = ha.helper_func.compute_group_stats(non_learner_sessions, 'minus_post');
 
 % Plotting
 figure('Color','w','Position',[100 100 1200 600]);
 t = bin_centers;
 
 % Determine global y-axis
-y_global_max = max([mean_mPFC_plus_pre_CS_plus(:); mean_mPFC_plus_post_CS_plus(:); ...
+y_global_max_cs_plus = max([mean_mPFC_plus_pre_CS_plus(:); mean_mPFC_plus_post_CS_plus(:); ...
                     mean_mPFC_minus_pre_CS_plus(:); mean_mPFC_minus_post_CS_plus(:); ...
                     mean_non_learner_pre_CS_plus(:); mean_non_learner_post_CS_plus(:)], [], 'omitnan') * 1.1;
 
+y_global_max_cs_minus = max([mean_mPFC_plus_pre_CS_plus(:); mean_mPFC_plus_post_CS_plus(:); ...
+                    mean_mPFC_minus_pre_CS_plus(:); mean_mPFC_minus_post_CS_plus(:); ...
+                    mean_non_learner_pre_CS_plus(:); mean_non_learner_post_CS_plus(:)], [], 'omitnan') * 1.1;
 % CS+ panel
 subplot(2,1,1); hold on;
 
-% mPFC+ Post
-if ~isempty(mean_mPFC_plus_post_CS_plus)
-    fill([t fliplr(t)], ...
-         [mean_mPFC_plus_post_CS_plus + sem_mPFC_plus_post_CS_plus, ...
-          fliplr(mean_mPFC_plus_post_CS_plus - sem_mPFC_plus_post_CS_plus)], ...
-         cLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-    plot(t, mean_mPFC_plus_post_CS_plus, 'Color', cLearner, 'LineWidth', 2.5, ...
-         'DisplayName', 'mPFC+ Post');
-end
+% % mPFC+ Pre
+% if ~isempty(mean_mPFC_plus_pre_CS_plus)
+%     fill([t fliplr(t)], ...
+%          [mean_mPFC_plus_pre_CS_plus + sem_mPFC_plus_pre_CS_plus, ...
+%           fliplr(mean_mPFC_plus_pre_CS_plus - sem_mPFC_plus_pre_CS_plus)], ...
+%          cLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+%     plot(t, mean_mPFC_plus_pre_CS_plus, 'Color', cLearner, 'LineWidth', 2.5, ...
+%          'DisplayName', 'mPFC+ Pre',LineStyle='--');
+% end
 
-% mPFC- Pre
-if ~isempty(mean_mPFC_minus_pre_CS_plus)
-    fill([t fliplr(t)], ...
-         [mean_mPFC_minus_pre_CS_plus + sem_mPFC_minus_pre_CS_plus, ...
-          fliplr(mean_mPFC_minus_pre_CS_plus - sem_mPFC_minus_pre_CS_plus)], ...
-         cNonLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-    plot(t, mean_mPFC_minus_pre_CS_plus, 'Color', cNonLearner, 'LineWidth', 2.5, ...
-         'DisplayName', 'mPFC- Pre');
-end
+% 
+% % mPFC+ Post
+% if ~isempty(mean_mPFC_plus_post_CS_plus)
+%     fill([t fliplr(t)], ...
+%          [mean_mPFC_plus_post_CS_plus + sem_mPFC_plus_post_CS_plus, ...
+%           fliplr(mean_mPFC_plus_post_CS_plus - sem_mPFC_plus_post_CS_plus)], ...
+%          cLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+%     plot(t, mean_mPFC_plus_post_CS_plus, 'Color', cLearner, 'LineWidth', 2.5, ...
+%          'DisplayName', 'mPFC+ Post');
+% end
 
-% Non-learners (if exists)
+
+% % mPFC- Pre
+% if ~isempty(mean_mPFC_minus_pre_CS_plus)
+%     fill([t fliplr(t)], ...
+%          [mean_mPFC_minus_pre_CS_plus + sem_mPFC_minus_pre_CS_plus, ...
+%           fliplr(mean_mPFC_minus_pre_CS_plus - sem_mPFC_minus_pre_CS_plus)], ...
+%          cNonLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+%     plot(t, mean_mPFC_minus_pre_CS_plus, 'Color', cNonLearner, 'LineWidth', 2.5, ...
+%          'DisplayName', 'mPFC- Pre',LineStyle='--');
+% end
+
+% % mPFC- Post
+% if ~isempty(mean_mPFC_minus_post_CS_plus)
+%     fill([t fliplr(t)], ...
+%          [mean_mPFC_minus_post_CS_plus + sem_mPFC_minus_post_CS_plus, ...
+%           fliplr(mean_mPFC_minus_post_CS_plus - sem_mPFC_minus_post_CS_plus)], ...
+%          cNonLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+%     plot(t, mean_mPFC_minus_post_CS_plus, 'Color', cNonLearner, 'LineWidth', 2.5, ...
+%          'DisplayName', 'mPFC- Post');
+% end
+
+
+% Non-learners Pre
 if ~isempty(mean_non_learner_pre_CS_plus) && any(~isnan(mean_non_learner_pre_CS_plus))
     fill([t fliplr(t)], ...
          [mean_non_learner_pre_CS_plus + sem_non_learner_pre_CS_plus, ...
           fliplr(mean_non_learner_pre_CS_plus - sem_non_learner_pre_CS_plus)], ...
          [0.5 0.5 0.5], 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
     plot(t, mean_non_learner_pre_CS_plus, 'Color', [0.5 0.5 0.5], 'LineWidth', 2.5, ...
-         'DisplayName', 'Non-learners Pre');
+         'DisplayName', 'Non-learners Pre',LineStyle='--');
+end
+
+% Non-learners Post
+if ~isempty(mean_non_learner_post_CS_plus)
+    fill([t fliplr(t)], ...
+         [mean_non_learner_post_CS_plus + sem_non_learner_post_CS_plus, ...
+          fliplr(mean_non_learner_post_CS_plus - sem_non_learner_post_CS_plus)], ...
+         [0.5 0.5 0.5], 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+    plot(t, mean_non_learner_post_CS_plus, 'Color', [0.5 0.5 0.5], 'LineWidth', 2.5, ...
+         'DisplayName', 'Non-learners Post');
 end
 
 xline(0, 'k--', 'HandleVisibility', 'off');
 legend('show', 'Location', 'best');
 xlabel('Time (s)');
-ylabel('Activity (CS+)');
-ylim([0, y_global_max]);
+ylabel('Mean Lick Rate (Hz)');
+ylim([0, y_global_max_cs_plus]);
 title('CS+ Responses');
 
 % CS- panel (similar structure)
 subplot(2,1,2); hold on;
+% 
+% % mPFC+ Pre
+% if ~isempty(mean_mPFC_plus_pre_CS_minus)
+%     fill([t fliplr(t)], ...
+%          [mean_mPFC_plus_pre_CS_minus + sem_mPFC_plus_pre_CS_minus, ...
+%           fliplr(mean_mPFC_plus_pre_CS_minus - sem_mPFC_plus_pre_CS_minus)], ...
+%          cLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+%     plot(t, mean_mPFC_plus_pre_CS_minus, 'Color', cLearner, 'LineWidth', 2.5, ...
+%          'DisplayName', 'mPFC+ Pre',LineStyle='--');
+% end
+
 
 % mPFC+ Post
 if ~isempty(mean_mPFC_plus_post_CS_minus)
@@ -227,191 +257,244 @@ if ~isempty(mean_mPFC_plus_post_CS_minus)
          'DisplayName', 'mPFC+ Post');
 end
 
-% mPFC- Pre
-if ~isempty(mean_mPFC_minus_pre_CS_minus)
+% % mPFC- Pre
+% if ~isempty(mean_mPFC_minus_pre_CS_minus)
+%     fill([t fliplr(t)], ...
+%          [mean_mPFC_minus_pre_CS_minus + sem_mPFC_minus_pre_CS_minus, ...
+%           fliplr(mean_mPFC_minus_pre_CS_minus - sem_mPFC_minus_pre_CS_minus)], ...
+%          cNonLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+%     plot(t, mean_mPFC_minus_pre_CS_minus, 'Color', cNonLearner, 'LineWidth', 2.5, ...
+%          'DisplayName', 'mPFC- Pre',LineStyle='--');
+% end
+
+% % mPFC- Post
+% if ~isempty(mean_mPFC_minus_post_CS_minus)
+%     fill([t fliplr(t)], ...
+%          [mean_mPFC_minus_post_CS_minus + sem_mPFC_minus_post_CS_minus, ...
+%           fliplr(mean_mPFC_minus_post_CS_minus - sem_mPFC_minus_post_CS_minus)], ...
+%          cNonLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+%     plot(t, mean_mPFC_minus_post_CS_minus, 'Color', cNonLearner, 'LineWidth', 2.5, ...
+%          'DisplayName', 'mPFC- Post');
+% end
+% %
+
+% Non-learners Pre
+if ~isempty(mean_non_learner_pre_CS_minus)
     fill([t fliplr(t)], ...
-         [mean_mPFC_minus_pre_CS_minus + sem_mPFC_minus_pre_CS_minus, ...
-          fliplr(mean_mPFC_minus_pre_CS_minus - sem_mPFC_minus_pre_CS_minus)], ...
-         cNonLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-    plot(t, mean_mPFC_minus_pre_CS_minus, 'Color', cNonLearner, 'LineWidth', 2.5, ...
-         'DisplayName', 'mPFC- Pre');
+         [mean_non_learner_pre_CS_minus + sem_non_learner_pre_CS_minus, ...
+          fliplr(mean_non_learner_pre_CS_minus - sem_non_learner_pre_CS_minus)], ...
+         [0.5 0.5 0.5], 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+    plot(t, mean_non_learner_pre_CS_minus, 'Color', [0.5 0.5 0.5], 'LineWidth', 2.5, ...
+         'DisplayName', 'Non-learners Pre',LineStyle='--');
+end
+
+% Non-learners Post
+if ~isempty(mean_non_learner_post_CS_minus)
+    fill([t fliplr(t)], ...
+         [mean_non_learner_post_CS_minus + sem_non_learner_post_CS_minus, ...
+          fliplr(mean_non_learner_post_CS_minus - sem_non_learner_post_CS_minus)], ...
+         [0.5 0.5 0.5], 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+    plot(t, mean_non_learner_post_CS_minus, 'Color', [0.5 0.5 0.5], 'LineWidth', 2.5, ...
+         'DisplayName', 'Non-learners Post');
 end
 
 xline(0, 'k--', 'HandleVisibility', 'off');
 xlabel('Time (s)');
-ylabel('Activity (CS-)');
-ylim([0, y_global_max]);
+ylabel('Mean Lick Rate (Hz)');
+ylim([0, y_global_max_cs_minus]);
 title('CS- Responses');
 
 sgtitle('Group Comparisons: Pre vs Post Learning', 'FontSize', 14, 'FontWeight', 'bold');
 
-%% for pre-post learning PSTHs with propr SEMs
+%% Plot ITI lick Rate Aligned to Learning Day Split by mPFC+ , mPFC- and non-learners
 
+mPFC_plus_grp = {'HA005','HA008','HA010','HA012'};
+mPFC_minus_grp = {'DS017','HA007','HA009','HA011','HA014','HA015'};
+non_learners_grp = {'HA006','HA013','AP030','AP031','AP032'};
 
-mPFC_plus_grp = {'HA005','HA008','HA010','HA011','HA012'};
-mPFC_minus_grp = {'DS017','HA007','HA006','HA009','HA013','HA014','HA015'};
-non_learners_grp= {};
-
+% Set parameters
+target_workflow = 'visual_operant_lick_two_stim_static';
 all_ids = {behaviour_data.animal_id};
 
-target_workflow = {'visual_operant_lick_two_stim_static'};
+% Step 1: Collect session-level data for each animal
+% Data structure: animal_sessions{animal_idx}(session_idx) = [rel_day, value, group]
 
-% Pre-allocate containers for each group
-% Store both means AND variances for proper error propagation
-learner_plus_pre_means  = {}; learner_plus_pre_vars  = {};
-learner_plus_post_means = {}; learner_plus_post_vars = {};
-learner_minus_pre_means = {}; learner_minus_pre_vars = {};
-learner_minus_post_means = {}; learner_minus_post_vars = {};
+animal_sessions = cell(numel(all_ids), 1);
 
-non_plus_pre_means  = {}; non_plus_pre_vars  = {};
-non_plus_post_means = {}; non_plus_post_vars = {};
-non_minus_pre_means = {}; non_minus_pre_vars = {};
-non_minus_post_means = {}; non_minus_post_vars = {};
-
-% Define fields
-rew_field = 'avg_psth_rewarded_stim_on';
-non_rew_field = 'avg_psth_non_rewarded_stim_on';
-
-% Loop over animals
 for ai = 1:numel(all_ids)
     animal_id = all_ids{ai};
-    isLearner = ismember(animal_id, mPFC_plus_grp);
     
-    days_all = behaviour_data(ai).recording_day;
-    
-    % Select days matching workflow
-    isValid = arrayfun(@(d) isfield(d,'workflow') && strcmp(d.workflow,target_workflow), days_all);
-    validDays = days_all(isValid);
-    
-    if isempty(validDays)
-        warning('Animal %s: no recording found, skipping', behaviour_data(ai).animal_id);
+    % Determine group membership
+    if ismember(animal_id, mPFC_plus_grp)
+        group_label = 1;
+    elseif ismember(animal_id, mPFC_minus_grp)
+        group_label = 2;
+    elseif ismember(animal_id, non_learners_grp)
+        group_label = 3;
+    else
         continue;
     end
     
-    sig_days_all = combined_sig_day_all_protocols{ai};
-    sigDays = sig_days_all(isValid);
+    days_all = behaviour_data(ai).recording_day;
+    isValid = arrayfun(@(d) isfield(d,'workflow') && strcmp(d.workflow, target_workflow), days_all);
+    validDays = days_all(isValid);
     
-    % Find first significant day
-    ld = find(sigDays, 1, 'first');
-    if isempty(ld)
-        warning('Animal %s: no learning day found', behaviour_data(ai).animal_id);
-        ld = numel(validDays) + 1;
+    if isempty(validDays)
+        continue;
     end
     
-    % Split into pre/post
-    plus_pre  = []; minus_pre  = [];
-    plus_post = []; minus_post = [];
+    % Get learning day
+    sig_days_all = combined_sig_day_all_protocols{ai};
+    sigDays = sig_days_all(isValid);
+    ld = find(sigDays, 1, 'first');
+    
+    if isempty(ld)
+        ld = ceil(numel(validDays) / 2);
+        fprintf('Animal %s: using middle day (%d) for alignment\n', animal_id, ld);
+    end
+    
+    % Calculate relative days
+    n = numel(validDays);
+    rel_days = (1:n) - ld;
+    
+    % Collect session data with mean and variance
+    session_data = [];
     
     for d = 1:numel(validDays)
-        if d < ld
-            plus_pre  = [plus_pre;  validDays(d).(rew_field)];
-            minus_pre = [minus_pre; validDays(d).(non_rew_field)];
-        else
-            plus_post  = [plus_post;  validDays(d).(rew_field)];
-            minus_post = [minus_post; validDays(d).(non_rew_field)];
+        day_data = validDays(d);
+        
+        if ~isfield(day_data, 'ITI_lick_counts') || ~isfield(day_data, 'ITI_actual_duration')
+            continue;
+        end
+        
+        iti_licks = day_data.ITI_lick_counts;
+        iti_duration = day_data.ITI_actual_duration;
+        
+        cs_plus_mask= day_data.cs_labels==1;
+
+        anticipatory_licks= day_data.anticipatory_licks(cs_plus_mask);
+        RTs= day_data.all_stim_diff_from_optimal_reward(cs_plus_mask);
+
+        % Calculate mean and variance for this session
+        session_mean = nanmean(iti_licks./iti_duration);
+        session_var = nanvar(iti_licks./iti_duration);
+        
+
+        % Store: [rel_day, mean, variance, group]
+        session_data = [session_data; rel_days(d), session_mean, session_var, group_label];
+    end
+    
+    animal_sessions{ai} = session_data;
+end
+
+% Step 2: Aggregate to group-level
+% Data structure: group_data{group_idx}(day_idx) = [rel_day, mean, sem, n_animals]
+
+group_data = cell(3, 1);
+min_animals = 3;  % Minimum number of animals required
+
+for g = 1:3
+    % Collect all relative days for this group
+    all_rel_days = [];
+    
+    for ai = 1:numel(all_ids)
+        if isempty(animal_sessions{ai})
+            continue;
+        end
+        
+        session_data = animal_sessions{ai};
+        if session_data(1, 4) == g  % Check group (4th column)
+            all_rel_days = [all_rel_days; session_data(:, 1)];
         end
     end
     
-    T = numel(validDays(d).(rew_field));
+    unique_days = unique(all_rel_days);
+    group_summary = [];
     
-    % --- Compute per-animal mean AND variance (across sessions) ---
-    if isempty(plus_pre)
-        avg_plus_pre = nan(1, T);
-        var_plus_pre = nan(1, T);
-    else
-        avg_plus_pre = mean(plus_pre, 1, 'omitnan');
-        var_plus_pre = var(plus_pre, 0, 1, 'omitnan');
+    for di = 1:length(unique_days)
+        day_val = unique_days(di);
+        
+        % Collect animal means and variances for this relative day
+        animal_means = [];
+        animal_vars = [];
+        
+        for ai = 1:numel(all_ids)
+            if isempty(animal_sessions{ai})
+                continue;
+            end
+            
+            session_data = animal_sessions{ai};
+            
+            % Check if this animal is in the current group
+            if session_data(1, 4) == g
+
+                % Find data for this relative day
+                day_idx = find(session_data(:, 1) == day_val);
+                
+                if ~isempty(day_idx) % only if it has that relative day
+                    animal_means = [animal_means; session_data(day_idx, 2)];  % Mean (column 2)
+                    animal_vars = [animal_vars; session_data(day_idx, 3)];    % Variance (column 3)
+                end
+            end
+        end
+        
+        % Only include this day if we have enough animals
+        n_animals_this_day = length(animal_means);
+        if n_animals_this_day >= min_animals
+            % Mean across animals
+            group_mean = mean(animal_means, 'omitnan');
+
+            % Between-animal SEM (standard error of the mean across animals)
+            group_sem = std(animal_means, 'omitnan') / sqrt(n_animals_this_day);
+
+            % Store: [rel_day, mean, sem, n_animals]
+            group_summary = [group_summary; day_val, group_mean, group_sem, n_animals_this_day];
+        end
     end
     
-    if isempty(plus_post)
-        avg_plus_post = nan(1, T);
-        var_plus_post = nan(1, T);
-    else
-        avg_plus_post = mean(plus_post, 1, 'omitnan');
-        var_plus_post = var(plus_post, 0, 1, 'omitnan');
+     % Sort by relative day (only if we have data)
+    if ~isempty(group_summary)
+        [~, sort_idx] = sort(group_summary(:, 1));
+        group_data{g} = group_summary(sort_idx, :);
     end
     
-    if isempty(minus_pre)
-        avg_minus_pre = nan(1, T);
-        var_minus_pre = nan(1, T);
-    else
-        avg_minus_pre = mean(minus_pre, 1, 'omitnan');
-        var_minus_pre = var(minus_pre, 0, 1, 'omitnan');
-    end
-    
-    if isempty(minus_post)
-        avg_minus_post = nan(1, T);
-        var_minus_post = nan(1, T);
-    else
-        avg_minus_post = mean(minus_post, 1, 'omitnan');
-        var_minus_post = var(minus_post, 0, 1, 'omitnan');
-    end
-    
-    % Store means and variances
-    if isLearner
-        learner_plus_pre_means{end+1, 1} = avg_plus_pre;
-        learner_plus_pre_vars{end+1, 1} = var_plus_pre;
-        learner_plus_post_means{end+1, 1} = avg_plus_post;
-        learner_plus_post_vars{end+1, 1} = var_plus_post;
-        learner_minus_pre_means{end+1, 1} = avg_minus_pre;
-        learner_minus_pre_vars{end+1, 1} = var_minus_pre;
-        learner_minus_post_means{end+1, 1} = avg_minus_post;
-        learner_minus_post_vars{end+1, 1} = var_minus_post;
-    else
-        non_plus_pre_means{end+1, 1} = avg_plus_pre;
-        non_plus_pre_vars{end+1, 1} = var_plus_pre;
-        non_plus_post_means{end+1, 1} = avg_plus_post;
-        non_plus_post_vars{end+1, 1} = var_plus_post;
-        non_minus_pre_means{end+1, 1} = avg_minus_pre;
-        non_minus_pre_vars{end+1, 1} = var_minus_pre;
-        non_minus_post_means{end+1, 1} = avg_minus_post;
-        non_minus_post_vars{end+1, 1} = var_minus_post;
+end
+
+% Plotting
+
+groups = {mPFC_plus_grp, mPFC_minus_grp, non_learners_grp};
+group_names = {'mPFC+', 'mPFC-', 'Non-learners'};
+group_colors = {cLearner, cNonLearner, [0.5 0.5 0.5]};
+
+figure('Color', 'w', 'Position', [100, 100, 900, 600]);
+hold on;
+
+for g = 1:3
+    if ~isempty(group_data{g})
+        days = group_data{g}(:, 1);
+        means = group_data{g}(:, 2);
+        sems = group_data{g}(:, 3);
+        
+        % Error band
+        fill([days; flipud(days)], ...
+             [means + sems; flipud(means - sems)], ...
+             group_colors{g}, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+        
+        % Mean line
+        plot(days, means, '-o', 'Color', group_colors{g}, ...
+             'LineWidth', 2.5, 'MarkerSize', 8, 'MarkerFaceColor', group_colors{g}, ...
+             'DisplayName', sprintf('%s (n=%d)', group_names{g}, numel(groups{g})));
     end
 end
 
-% Convert to matrices
-learner_pre_CS_plus = cat(1, learner_plus_pre_means{:});
-learner_pre_CS_plus_vars = cat(1, learner_plus_pre_vars{:});
-learner_post_CS_plus = cat(1, learner_plus_post_means{:});
-learner_post_CS_plus_vars = cat(1, learner_plus_post_vars{:});
-learner_pre_CS_minus = cat(1, learner_minus_pre_means{:});
-learner_pre_CS_minus_vars = cat(1, learner_minus_pre_vars{:});
-learner_post_CS_minus = cat(1, learner_minus_post_means{:});
-learner_post_CS_minus_vars = cat(1, learner_minus_post_vars{:});
+xline(0, '--k', 'Learning Day', 'LineWidth', 2, ...
+      'LabelVerticalAlignment', 'bottom', 'FontSize', 11, 'FontWeight', 'bold', 'HandleVisibility', 'off');
 
-non_learner_pre_CS_plus = cat(1, non_plus_pre_means{:});
-non_learner_pre_CS_plus_vars = cat(1, non_plus_pre_vars{:});
-non_learner_post_CS_plus = cat(1, non_plus_post_means{:});
-non_learner_post_CS_plus_vars = cat(1, non_plus_post_vars{:});
-non_learner_pre_CS_minus = cat(1, non_minus_pre_means{:});
-non_learner_pre_CS_minus_vars = cat(1, non_minus_pre_vars{:});
-non_learner_post_CS_minus = cat(1, non_minus_post_means{:});
-non_learner_post_CS_minus_vars = cat(1, non_minus_post_vars{:});
+xlabel('Days Relative to Learning', 'FontSize', 13, 'FontWeight', 'bold');
+ylabel('ITI Lick Rate (Licks/s)', 'FontSize', 13, 'FontWeight', 'bold');
+title('ITI Licking Aligned to Learning Day', 'FontSize', 14, 'FontWeight', 'bold');
+legend('Location', 'best', 'FontSize', 11);
 
-% Compute grand means and SEMs (pooling variances properly)
-n_learner = size(learner_pre_CS_plus, 1);
-n_non_learner = size(non_learner_pre_CS_plus, 1);
+set(gca, 'FontSize', 11, 'LineWidth', 1.2, 'TickDir', 'out');
+hold off;
 
-% Grand means
-mean_learner_pre_CS_plus = mean(learner_pre_CS_plus, 1, 'omitnan');
-mean_learner_post_CS_plus = mean(learner_post_CS_plus, 1, 'omitnan');
-mean_learner_pre_CS_minus = mean(learner_pre_CS_minus, 1, 'omitnan');
-mean_learner_post_CS_minus = mean(learner_post_CS_minus, 1, 'omitnan');
-
-mean_non_learner_pre_CS_plus = mean(non_learner_pre_CS_plus, 1, 'omitnan');
-mean_non_learner_post_CS_plus = mean(non_learner_post_CS_plus, 1, 'omitnan');
-mean_non_learner_pre_CS_minus = mean(non_learner_pre_CS_minus, 1, 'omitnan');
-mean_non_learner_post_CS_minus = mean(non_learner_post_CS_minus, 1, 'omitnan');
-
-% Pooled SEMs (averaging variances, then dividing by n_animals)
-sem_learner_pre_CS_plus = sqrt(mean(learner_pre_CS_plus_vars, 1, 'omitnan')) / sqrt(n_learner);
-sem_learner_post_CS_plus = sqrt(mean(learner_post_CS_plus_vars, 1, 'omitnan')) / sqrt(n_learner);
-sem_learner_pre_CS_minus = sqrt(mean(learner_pre_CS_minus_vars, 1, 'omitnan')) / sqrt(n_learner);
-sem_learner_post_CS_minus = sqrt(mean(learner_post_CS_minus_vars, 1, 'omitnan')) / sqrt(n_learner);
-
-sem_non_learner_pre_CS_plus = sqrt(mean(non_learner_pre_CS_plus_vars, 1, 'omitnan')) / sqrt(n_non_learner);
-sem_non_learner_post_CS_plus = sqrt(mean(non_learner_post_CS_plus_vars, 1, 'omitnan')) / sqrt(n_non_learner);
-sem_non_learner_pre_CS_minus = sqrt(mean(non_learner_pre_CS_minus_vars, 1, 'omitnan')) / sqrt(n_non_learner);
-sem_non_learner_post_CS_minus = sqrt(mean(non_learner_post_CS_minus_vars, 1, 'omitnan')) / sqrt(n_non_learner);
-
-% [Rest of plotting code remains the same...]

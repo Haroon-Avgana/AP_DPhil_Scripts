@@ -28,7 +28,12 @@ for animal_idx = 1:numel(animal_list)
     animal = animal_list{animal_idx};
 
     % Assign fields: name & recording
-       
+      
+    passive_data(animal_idx).animal = animal;
+    passive_data(animal_idx).widefield = struct();
+
+    global_day= 1; % define global day
+
     for protocol_idx = 1:length(protocols_to_run)
 
         % get all passives (including big stim)

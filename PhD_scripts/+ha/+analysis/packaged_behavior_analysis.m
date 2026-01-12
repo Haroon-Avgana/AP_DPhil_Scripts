@@ -85,7 +85,7 @@ learning_index_animal = vertcat(combined_sig_day_all_protocols{:});
 %% Plot a single animal raster plot and PSTH aligned to stim onset/stim in center
 
 % Define parameters
-animal_idx = 9; % Choose your animal index here
+animal_idx = 2; % Choose your animal index here
 lick_detection_time_window = [-5 5];
 
 % Modern color scheme
@@ -114,7 +114,7 @@ if length(workflow_indices) < 2
 end
 
 % Select early and late days from the first workflow
-early_day_idx = workflow_indices(1);
+early_day_idx = workflow_indices(end-1);
 late_day_idx = workflow_indices(end);
 
 % Create figure with 2x2 layout per alignment type
@@ -497,7 +497,7 @@ sgtitle('Lick Behavior Aligned to Stimulus Onset', 'FontSize', 16, 'FontWeight',
 %% Plots indivdual animal PSTH aligned to stim onset/stim center - CS+ and CS- overlaid
 
 % Define parameters
-animal_idx = 9; % Choose your animal index here
+animal_idx = 2; % Choose your animal index here
 lick_detection_time_window = [-5 5];
 
 % Color scheme matching your style
@@ -522,7 +522,7 @@ if length(workflow_indices) < 2
 end
 
 % Select early and late days from the first workflow
-early_day_idx = workflow_indices(1);
+early_day_idx = workflow_indices(end-1);
 late_day_idx = workflow_indices(end);
 valid_rec_days = recordings([early_day_idx, late_day_idx]);
 

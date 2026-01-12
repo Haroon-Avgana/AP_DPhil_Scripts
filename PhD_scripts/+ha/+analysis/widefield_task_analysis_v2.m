@@ -1,0 +1,479 @@
+%% 11/12/2025 Files that I can load to work on cohort until HA015
+
+% new_packaging_test_task_widefield
+% behaviour_structure_all_animals_11_12_25
+% the singificance one is incorrect as it set for the 1.5s anticipaotry
+% window
+
+%%
+%% Load variables
+
+load('C:\Users\havgana\Desktop\DPhil\packaged_data\task_widefield_08_01_26.mat'); % wf task
+load('C:\Users\havgana\Desktop\DPhil\packaged_data\behaviour_structure_all_animals_11_12_25.mat') % behaviour
+load('C:\Users\havgana\Desktop\DPhil\packaged_data\combined_sig_day_all_protocols_07_30.mat') % sig days
+
+% load master_U
+wf_U= plab.wf.load_master_U;
+
+added_time = -1:0.03:3;
+added_time_Kernel=  fliplr((-10:100)/30); % kernel
+
+%% Set up variables for averaged activity 
+
+% only using n components
+n_components=200;
+kernel_n_components=100;
+
+
+% make protocol index (n all days x workflow number ordered)
+workflow_animal = cellfun(@(x) {x.workflow},{behaviour_data.recording_day},'uni',false);
+workflow_cat = grp2idx(horzcat(workflow_animal{:}));
+
+% Create a logical learning index variable (n all days x [0,1])
+learning_index_animal = vertcat(combined_sig_day_all_protocols{:});
+
+% Creates an animal index (n all days x animal number ordered)
+widefield_animal_idx = grp2idx(cell2mat(cellfun(@(animal,wf) repmat(animal,length(wf),1), ...
+    {task_data.animal},{task_data.widefield},'uni',false)'));
+
+% get all the widefield data
+widefield_cat= cat(2,task_data.widefield); % concat
+
+% for V - create a V x T x all days variable - rewarded stim
+rewarded_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.rewarded_stim_on_aligned_V}, 'UniformOutput', false); % average across trials
+rewarded_stim_v_stacked_data = cat(3, rewarded_stim_v{:});
+
+% for V - non rewarded
+non_rewarded_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.non_rewarded_stim_onset_aligned_V}, 'UniformOutput', false); % average across trials
+non_rewarded_stim_v_stacked_data = cat(3, non_rewarded_stim_v{:});
+
+% for V- rewarded stim start move (only relevant to right move protocol)
+rewarded_stim_start_move_v= cellfun(@(x) mean(x, 3), {widefield_cat.rewarded_stim_start_to_move_aligned_V}, 'UniformOutput', false); % average across trials
+rewarded_stim_start_move_v_stacked= cat(3, rewarded_stim_start_move_v{:});
+
+% for V- reward times
+reward_times= cellfun(@(x) mean(x, 3), {widefield_cat.reward_times_aligned_V}, 'UniformOutput', false); % average across trials
+reward_times_stacked= cat(3, reward_times{:});
+
+
+% For kernels
+rewarded_stim_kernel= cat(3,widefield_cat.rewarded_stim_on_aligned_kernel);
+non_rewarded_stim_kernel= cat(3,widefield_cat.non_rewarded_stim_on_aligned_kernel);
+rewarded_stim_start_move_kernel= cat(3,widefield_cat.rewarded_stim_start_to_move_aligned_kernel);
+rewarded_stim_final_position_kernel= cat(3,widefield_cat.rewarded_stim_final_position_aligned_kernel);
+
+reward_times_kernel= cat(3,widefield_cat.reward_times_aligned_kernel);
+
+
+animal_list= {behaviour_data.animal_id}; % get animal list
+unique_workflow_labels= unique(horzcat(workflow_animal{:}),"stable"); % unique workflows by order
+
+
+% ROI masks
+mPFC_data = load('C:\Users\havgana\Desktop\DPhil\Coding Scripts\ROIs\mPFC_ROI.mat');
+left_mPFC_ROI_mask = mPFC_data.new_pfc_roi_mask;
+right_mPFC_ROI_mask = fliplr(left_mPFC_ROI_mask);
+
+ViS_ROI_data = load("C:\Users\havgana\Desktop\DPhil\Coding Scripts\ROIs\right_ViS_mask.mat");
+left_ViS_ROI_mask = ViS_ROI_data.visual_cortex_mask;
+right_ViS_ROI_mask = fliplr(left_ViS_ROI_mask);
+
+% animals that have not learned the static but learned the right
+% group_animals = {'DS017','HA006','HA007','HA009','HA011','HA013','HA014','HA015'};
+group_animals = {'DS017','HA006','HA007','HA009','HA013','HA014','HA015'};
+
+
+% Create a list of animal IDs repeated per recording day
+animal_ids_all_days = cellfun(@(animal, wf) repmat({animal}, length(wf), 1), ...
+    {task_data.animal}, {task_data.widefield}, 'UniformOutput', false);
+
+% Convert to column vector
+animal_ids_all_days_stacked = vertcat(animal_ids_all_days{:});
+
+% Create a logical index for whether each row belongs to the group
+is_group_animal = ismember(animal_ids_all_days_stacked, group_animals);  % (n_days_all x 1)
+
+
+% set up two custom colors for learners and non-learners
+cmPFC_plus    = [0 0.6 0];   % dark green
+cmPFC_minus = [0.6 0 0.6]; % purple
+
+%% Plot line variables setup basline substracted
+
+event_times= [-0.5,0.75];
+baseline_time_windows = [-0.1, 0];
+
+% if you want to examine CS- you need to padd the non_rewarded variables
+
+% Find indices where protocol is 3
+protocol_3_mask = workflow_cat == 3;
+
+% Initialize non_rewarded_stim_kernel with same size as rewarded_stim_kernel
+if  length(non_rewarded_stim_kernel) < length(rewarded_stim_kernel)
+    % Create full-size array initialized with NaNs
+    non_rewarded_stim_kernel_padded = nan(size(rewarded_stim_kernel));
+    
+    % Fill in existing data for non-protocol-3 sessions
+    non_protocol_3_idx = find(~protocol_3_mask);
+    non_rewarded_stim_kernel_padded(:,:,non_protocol_3_idx) = non_rewarded_stim_kernel;
+    
+    % Replace original with padded version
+    % non_rewarded_stim_kernel = non_rewarded_stim_kernel_padded;
+end
+
+% data to index:  V×T×Ndays_total
+aligned_all = rewarded_stim_kernel;
+
+% define the added time 
+added_time_V= added_time;
+added_time_Kernel;
+
+% Find the corresponding indices in added_time for the time window
+time_window_idx = find(added_time_Kernel >= event_times(1) & added_time_Kernel <= event_times(2));
+baseline_mask_idx = (added_time_Kernel >= baseline_time_windows(1) & added_time_Kernel <= baseline_time_windows(2));
+
+% % 1×T win vector in seconds
+t_for_plot = added_time_Kernel(time_window_idx);
+
+n_components_to_use= kernel_n_components; % kernel_n_components or n_components
+
+right_mPFC_ROI_trace = permute( ...
+    ap.wf_roi(wf_U(:,:,1:n_components_to_use), aligned_all(:,time_window_idx,:),[],[], right_mPFC_ROI_mask), ...
+    [3,2,1] );   % gives Ndays_total × T
+
+right_mPFC_ROI_baseline=permute( ...
+    ap.wf_roi(wf_U(:,:,1:n_components_to_use), aligned_all(:,baseline_mask_idx,:),[],[], right_mPFC_ROI_mask), ...
+    [3,2,1] );   % gives Ndays_total × T
+
+right_mPFC_ROI_trace= right_mPFC_ROI_trace- mean(right_mPFC_ROI_baseline,2);
+
+left_mPFC_ROI_trace = permute( ...
+    ap.wf_roi(wf_U(:,:,1:n_components_to_use), aligned_all(:,time_window_idx,:),[],[], left_mPFC_ROI_mask), ...
+    [3,2,1] );   % same dims
+
+left_mPFC_ROI_baseline=permute( ...
+    ap.wf_roi(wf_U(:,:,1:n_components_to_use), aligned_all(:,baseline_mask_idx,:),[],[], left_mPFC_ROI_mask), ...
+    [3,2,1] );   % gives Ndays_total × T
+
+left_mPFC_ROI_trace= left_mPFC_ROI_trace- mean(left_mPFC_ROI_baseline,2);
+
+% For visual cortex
+right_ViS_ROI_trace = permute( ...
+    ap.wf_roi(wf_U(:,:,1:n_components_to_use), aligned_all(:,time_window_idx,:),[],[], right_ViS_ROI_mask), ...
+    [3,2,1] );   % gives Ndays_total × T
+
+left_ViS_ROI_trace = permute( ...
+    ap.wf_roi(wf_U(:,:,1:n_components_to_use), aligned_all(:,time_window_idx,:),[],[], left_ViS_ROI_mask), ...
+    [3,2,1] );   % gives Ndays_total × T
+
+
+
+%% Plot pre and post Scatter for Right vs Left mPFC responses for all animals
+
+protocol_idx = 1;
+animals = unique(widefield_animal_idx);
+
+% Define group assignment by actual animal IDs
+animal_groups = containers.Map('KeyType', 'double', 'ValueType', 'double');
+
+% mPFC+ animals (use actual animal IDs from widefield_animal_idx)
+mPFC_plus_IDs = [2 5 7 8 9]; % Replace with actual IDs
+for id = mPFC_plus_IDs
+    animal_groups(id) = 1;
+end
+
+% mPFC- animals
+mPFC_minus_IDs = [1 3 4 6 10 11 12]; % Replace with actual IDs
+for id = mPFC_minus_IDs
+    animal_groups(id) = 0;
+end
+
+
+
+% Storage
+animal_mPFC_right_pre = []; animal_mPFC_left_pre = [];
+animal_mPFC_right_post = []; animal_mPFC_left_post = [];
+animal_ids_included = []; % Track which animals are included
+
+counter = 0;
+for ai = animals(:)'
+    sel = (widefield_animal_idx == ai) & (workflow_cat == protocol_idx);
+    days_idx = find(sel);
+    if isempty(days_idx), continue; end
+    
+    learn_local = learning_index_animal(days_idx) == 1;
+
+    % Find first occurrence of two consecutive significant days
+    consecutive = learn_local(1:end-1) & learn_local(2:end);
+    ld = find(consecutive, 1, 'first');
+
+    % if isempty(ld), continue; end % No consecutive days found
+    if isempty(ld)
+        pre_days= 1:length(days_idx); % if no learning - then all days are pre
+
+    else
+
+        pre_days = find((1:length(days_idx)) < ld);
+        post_days = find((1:length(days_idx)) >= ld);
+    end
+    % if isempty(post_days) || isempty(pre_days), continue; end
+    
+    counter = counter + 1;
+    animal_ids_included(counter) = ai;
+    
+    response_window = t_for_plot >= 0 & t_for_plot <= 0.35;
+    
+    % Pre-learning
+    TR_pre = right_mPFC_ROI_trace(days_idx(pre_days), :);
+    TL_pre = left_mPFC_ROI_trace(days_idx(pre_days), :);
+    TR_pre_mean = mean(TR_pre, 1, 'omitnan');
+    TL_pre_mean = mean(TL_pre, 1, 'omitnan');
+    animal_mPFC_right_pre(counter) = max(TR_pre_mean(response_window));
+    animal_mPFC_left_pre(counter) = max(TL_pre_mean(response_window));
+    
+    % Post-learning
+    TR_post = right_mPFC_ROI_trace(days_idx(post_days), :);
+    TL_post = left_mPFC_ROI_trace(days_idx(post_days), :);
+    TR_post_mean = mean(TR_post, 1, 'omitnan');
+    TL_post_mean = mean(TL_post, 1, 'omitnan');
+    animal_mPFC_right_post(counter) = max(TR_post_mean(response_window));
+    animal_mPFC_left_post(counter) = max(TL_post_mean(response_window));
+end
+
+
+% Assign colors based on group
+colors_mat = nan(length(animal_ids_included), 3);
+for i = 1:length(animal_ids_included)
+    ai = animal_ids_included(i);
+    
+    if isKey(animal_groups, ai)
+        if animal_groups(ai) == 1
+            colors_mat(i, :) = cmPFC_plus;
+        else
+            colors_mat(i, :) = cmPFC_minus;
+        end
+    else
+        colors_mat(i, :) = [0.5 0.5 0.5]; % Unclassified
+    end
+end
+
+% Plot
+figure('Color', 'w', 'Position', [100, 100, 1200, 500]);
+max_val = max([animal_mPFC_right_pre, animal_mPFC_left_pre, ...
+               animal_mPFC_right_post, animal_mPFC_left_post]);
+
+for sp = 1:2
+    subplot(1, 2, sp);
+    if sp == 1
+        data_x = animal_mPFC_right_pre; 
+        data_y = animal_mPFC_left_pre;
+        tit = 'Pre-Learning';
+    else
+        data_x = animal_mPFC_right_post; 
+        data_y = animal_mPFC_left_post;
+        tit = 'Post-Learning';
+    end
+    
+    % Plot each point with its assigned color
+    for i = 1:length(data_x)
+        scatter(data_x(i), data_y(i), 150, colors_mat(i, :), 'filled', ...
+                'MarkerEdgeColor', 'k', 'MarkerFaceAlpha', 0.7, 'LineWidth', 1.5);
+        hold on;
+    end
+    
+    plot([0, max_val], [0, max_val], 'k--', 'LineWidth', 2);
+    xlabel('Right mPFC Activity', 'FontSize', 13, 'FontWeight', 'bold');
+    ylabel('Left mPFC Activity', 'FontSize', 13, 'FontWeight', 'bold');
+    title(tit, 'FontSize', 14, 'FontWeight', 'bold');
+    axis equal; xlim([0, max_val*1.05]); ylim([0, max_val*1.05]);
+    set(gca, 'FontSize', 12, 'LineWidth', 1.2);
+end
+
+% Add legend
+legend([scatter(NaN, NaN, 150, cmPFC_plus, 'filled', 'MarkerEdgeColor', 'k'), ...
+        scatter(NaN, NaN, 150, cmPFC_minus, 'filled', 'MarkerEdgeColor', 'k')], ...
+       {'mPFC+', 'mPFC-'}, 'Location', 'best');
+
+%% ===== SESSION-LEVEL mPFC vs BEHAVIOR ANALYSIS =====
+
+protocol_idx = 1;
+response_window = t_for_plot >= 0 & t_for_plot <= 0.35;
+
+% Pre-allocate
+n_sessions = sum(workflow_cat == protocol_idx);
+session_animal = nan(n_sessions, 1);
+session_mPFC_activity = nan(n_sessions, 1);
+session_ITI_licks = nan(n_sessions, 1);
+session_discrimination = nan(n_sessions, 1);
+session_reaction_time = nan(n_sessions, 1);
+session_significance= nan(n_sessions,1);
+
+% Create mapping: for each widefield_cat(idx), what day number is it within that animal?
+day_within_animal = nan(length(widefield_cat), 1);
+for animal = unique(widefield_animal_idx)'
+    animal_mask = widefield_animal_idx == animal;
+    day_within_animal(animal_mask) = 1:sum(animal_mask);
+end
+
+counter = 0;
+
+for idx = 1:length(widefield_cat)
+    if workflow_cat(idx) ~= protocol_idx || isempty(widefield_cat(idx).rewarded_stim_start_to_move_aligned_V)
+        continue;
+    end
+    
+    counter = counter + 1;
+    animal_idx = widefield_animal_idx(idx);
+    day_num = day_within_animal(idx);
+    
+    session_animal(counter) = animal_idx;
+    
+    % mPFC activity
+    trace_R = right_mPFC_ROI_trace(idx, :);
+    trace_L = left_mPFC_ROI_trace(idx, :);
+    peak_R = max(trace_R(response_window));
+    peak_L = max(trace_L(response_window));
+    % session_mPFC_activity(counter) = mean([peak_R, peak_L]);
+    session_mPFC_activity(counter)= peak_L;
+
+    % Behavioral metrics
+    day_data= behaviour_data(animal_idx).recording_day(day_num);
+
+    % calculate mean ITI lick rate
+    iti_licks = day_data.ITI_lick_counts;
+    iti_duration =day_data.ITI_actual_duration;
+    session_ITI_licks(counter) =nanmean(iti_licks./iti_duration);
+
+    % calculate CS+ and CS- discrimintion index
+    cs_plus_mask= day_data.cs_labels ==1;
+    cs_plus_licks= mean(day_data.anticipatory_licks(cs_plus_mask));
+    cs_minus_licks= mean(day_data.anticipatory_licks(~cs_plus_mask));
+    session_discrimination(counter) = cs_plus_licks- cs_minus_licks ./ cs_plus_licks + cs_minus_licks;
+
+    % Reaction times
+    session_reaction_time(counter) = nanmedian(day_data.all_stim_diff_from_optimal_reward(cs_plus_mask));
+
+    % Mask whether significant or not
+    sig_day = combined_sig_day_all_protocols{animal_idx}(day_num);
+    session_significance(counter)= sig_day;
+end
+
+% Trim
+session_animal = session_animal(1:counter);
+session_mPFC_activity = session_mPFC_activity(1:counter);
+session_ITI_licks = session_ITI_licks(1:counter);
+session_discrimination = session_discrimination(1:counter);
+session_reaction_time = session_reaction_time(1:counter);
+session_significance = session_significance(1:counter);
+
+% Separate pre vs post learning
+pre_mask = session_significance == 0;
+post_mask = session_significance == 1;
+
+
+%% ===== PLOT =====%%
+
+behavior_metric = session_ITI_licks; 
+behavior_label = 'ITI licks';
+
+unique_animals = unique(session_animal);
+colors = distinguishable_colors(length(unique_animals));
+
+figure('Color', 'w', 'Position', [100, 100, 700, 600]);
+hold on;
+
+for ai = 1:length(unique_animals)
+    sess_mask = session_animal == unique_animals(ai);
+
+    combined_mask= sess_mask; % in case you want to filter pre-post learning
+
+    x = behavior_metric(combined_mask);
+    y = session_mPFC_activity(combined_mask);
+
+    % Scatter
+    scatter(x, y, 100, colors(ai, :), 'filled', 'MarkerEdgeColor', 'k', ...
+        'LineWidth', 1, 'MarkerFaceAlpha', 0.7);
+  
+
+    % Fit line if >2 points
+    if sum(combined_mask) > 2
+        p = polyfit(x, y, 1);
+        x_fit = linspace(min(x), max(x), 50);
+        plot(x_fit, polyval(p, x_fit), '-', 'Color', colors(ai, :), 'LineWidth', 1.5);
+    end
+
+    % % Plot color bar
+    % colormap(colors);
+    % colorbar('northoutside');
+end
+
+
+
+xlabel(behavior_label, 'FontSize', 13, 'FontWeight', 'bold');
+ylabel('mPFC Activity', 'FontSize', 13, 'FontWeight', 'bold');
+title('Within-Animal Trajectories', 'FontSize', 14, 'FontWeight', 'bold');
+% Create discrete colormap
+colormap(colors);
+cb = colorbar('Location', 'eastoutside');
+cb.Label.String = 'Mouse';
+cb.Label.FontSize = 12;
+cb.Label.FontWeight = 'bold';
+
+% Set discrete ticks for each animal
+cb.Ticks = linspace(0, 1, n_animals);
+cb.TickLabels = arrayfun(@num2str, 1:n_animals, 'UniformOutput', false);
+
+% Make colorbar smaller
+cb.Position(3) = 0.02; % Width
+cb.Position(4) = 0.3;  % Height
+
+% Center vertically
+cb.Position(2) = 0.35; % Adjust Y position
+
+set(gca, 'FontSize', 12, 'LineWidth', 1.2); box off;
+
+
+%% Run mixed-effects model 
+% Requires Statistics Toolbox
+tbl = table(session_animal, behavior_metric, session_mPFC_activity, ...
+            'VariableNames', {'Animal', 'Behavior', 'mPFC'});
+
+% Random intercept model
+lme = fitlme(tbl, 'mPFC ~ Behavior + (1|Animal)');
+disp(lme);
+
+lme_slopes = fitlme(tbl, 'mPFC ~ Behavior + (Behavior|Animal)');
+compare(lme, lme_slopes) % Test if random slopes improve fit
+
+[~, ~, stats] = randomEffects(lme_slopes);
+animal_slopes = stats.Estimate(2:2:end); % Extract slope random effects
+animal_intercepts = stats.Estimate(1:2:end);
+
+% Plot distribution
+figure;
+histogram(animal_slopes, 10);
+xlabel('Animal-specific slope (ITI effect)');
+ylabel('Count');
+title('Heterogeneity in mPFC-ITI relationship');
+
+
+% Extract animal IDs and their slopes
+animal_ids_slopes = unique_animals;
+is_mPFC_plus = logical([0 1 0 0 1 0 1 1 1 0 0 0]'); % Your manual classification
+
+% Test separation
+[~, p] = ttest2(animal_slopes(is_mPFC_plus), animal_slopes(~is_mPFC_plus));
+fprintf('Slope difference: p = %.2e\n', p);
+
+
+
+%% Fit Model Seperately for pre-post
+
+% Fit models separately
+lme_pre = fitlme(tbl(pre_mask, :), 'mPFC ~ Behavior + (Behavior|Animal)');
+lme_post = fitlme(tbl(post_mask, :), 'mPFC ~ Behavior + (Behavior|Animal)');
+
+% Compare fixed effects
+fprintf('Pre: β = %.2e, p = %.2e\n', lme_pre.Coefficients.Estimate(2), lme_pre.Coefficients.pValue(2));
+fprintf('Post: β = %.2e, p = %.2e\n', lme_post.Coefficients.Estimate(2), lme_post.Coefficients.pValue(2));
+

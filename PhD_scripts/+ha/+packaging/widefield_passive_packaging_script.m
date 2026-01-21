@@ -26,7 +26,7 @@ added_time = -0.5:0.03:1;
 for animal_idx = 1:numel(animal_list)
 
     animal = animal_list{animal_idx};
-
+    global_day= 0;
     % Assign fields: name & recording
        
     for protocol_idx = 1:length(protocols_to_run)
@@ -87,6 +87,8 @@ for animal_idx = 1:numel(animal_list)
                 idxs_to_run = 1:numel(workflows);
             end
 
+            global_day=  global_day +1; % increment global day
+
             for rec_idx = idxs_to_run
                 rec_time      = rec.recording{rec_idx};
                 workflow_name = workflows{rec_idx};
@@ -99,6 +101,7 @@ for animal_idx = 1:numel(animal_list)
                     rec_idx, numel(workflows), workflow_name ...
                     );
 
+               
 
                 % Snapshot workspace
                 vars_to_keep = who;
@@ -198,7 +201,6 @@ for animal_idx = 1:numel(animal_list)
 
             end
 
-            global_day= global_day+1; % increment
             % clear the day specific variables
             clearvars('-except',vars_to_keep{:});
         end
@@ -220,8 +222,8 @@ load('passive_data_all_animals.mat');
 % load master_U
 wf_U= plab.wf.load_master_U;
 
-single_animal_data= cat(2,passive_data(2).widefield);
-right_stim_data= cat(3,single_animal_data(1:3).right_fourty_five_deg_stim_aligned_kernel);
+single_animal_data= cat(2,passive_data(15).widefield);
+right_stim_data= cat(3,single_animal_data(20:40).right_fourty_five_deg_big_stim_aligned_V);
 
 mean_right_stim_data= nanmean(right_stim_data,3);
 

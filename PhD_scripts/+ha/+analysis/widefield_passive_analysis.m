@@ -3,9 +3,9 @@
 
 %% Load variables and define colours
 
-load("C:\Users\havgana\Desktop\DPhil\packaged_data\passive_data_all_animals_07_30.mat"); % wf passive
-load('C:\Users\havgana\Desktop\DPhil\packaged_data\behaviour_data_all_animals_10_13.mat') % behaviour
-load('C:\Users\havgana\Desktop\DPhil\packaged_data\combined_sig_day_all_protocols_big_stim_filtered_10_14.mat') % sig days
+load("C:\Users\havgana\Desktop\DPhil\packaged_data\passive_data_all_animals_14_01_26.mat"); % wf passive
+load('C:\Users\havgana\Desktop\DPhil\packaged_data\behaviour_structure_all_animals_14_01_26.mat') % behaviour
+load('C:\Users\havgana\Desktop\DPhil\packaged_data\combined_sig_day_all_protocols_14_01_26.mat') % sig days
 
 % load master_U
 wf_U= plab.wf.load_master_U;
@@ -82,7 +82,7 @@ learning_index_animal = vertcat(combined_sig_day_all_protocols{:});
 
 % Creates an animal index (n all days x animal number ordered)
 widefield_animal_idx = grp2idx(cell2mat(cellfun(@(animal,wf) repmat(animal,length(wf),1), ...
-    {passive_data.animal},{passive_data.widefield},'uni',false)'));
+    {behaviour_data.animal_id},{passive_data.widefield},'uni',false)'));
 
 % get all the widefield data
 widefield_cat= cat(2,passive_data.widefield); % concat
@@ -165,11 +165,11 @@ cNonLearner = [0.6 0 0.6]; % purple
 % those who didn't for right and centre stimulus?
 
 % animals that have not learned the static but learned the right
-group_animals = {'DS017','HA006','HA007','HA009','HA013','HA014','HA015'};
+group_animals = {'DS017','HA006','HA007','HA009','HA013','HA014','HA015','AP030','AP031','AP032'};
 
 % Create a list of animal IDs repeated per recording day
 animal_ids_all_days = cellfun(@(animal, wf) repmat({animal}, length(wf), 1), ...
-    {passive_data.animal}, {passive_data.widefield}, 'UniformOutput', false);
+    {behaviour_data.animal_id}, {passive_data.widefield}, 'UniformOutput', false);
 
 % Convert to column vector
 animal_ids_all_days_stacked = vertcat(animal_ids_all_days{:});
@@ -199,8 +199,8 @@ axis image;
 animal_list;
 
 % pre post of workflow 3 (right move)
-pre = nanmean(right_stim_kernel(:,:,workflow_cat==1 & learning_index_animal==0 & widefield_animal_idx==9),3);
-post = nanmean(right_stim_kernel(:,:,workflow_cat==1 & learning_index_animal==1 & widefield_animal_idx==9),3);
+pre = nanmean(right_stim_kernel(:,:,workflow_cat==1 & learning_index_animal==0 & widefield_animal_idx==13),3);
+post = nanmean(right_stim_kernel(:,:,workflow_cat==1 & learning_index_animal==1 & widefield_animal_idx==13),3);
 
 added_time_Kernel=  fliplr((-10:30)/30);
 
@@ -558,8 +558,8 @@ for ai = animals(:)'
     if isempty(ld), ld=length(days_idx)+1; end
 
     % ——— grab the day×time ROI traces ———
-    TR = right_ViS_ROI_trace(days_idx, :);  % n_days×T
-    TL = left_ViS_ROI_trace(days_idx,  :);  % n_days×T
+    TR = right_mPFC_ROI_trace(days_idx, :);  % n_days×T
+    TL = left_mPFC_ROI_trace(days_idx,  :);  % n_days×T
 
     % ——— split into pre vs post days ———
     pre_mask  = (1:size(TR,1)) < ld;

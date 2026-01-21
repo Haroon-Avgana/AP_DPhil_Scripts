@@ -2,15 +2,13 @@
 
 % new_packaging_test_task_widefield
 % behaviour_structure_all_animals_11_12_25
-% the singificance one is incorrect as it set for the 1.5s anticipaotry
-% window
 
 %%
 %% Load variables
 
 load('C:\Users\havgana\Desktop\DPhil\packaged_data\task_widefield_08_01_26.mat'); % wf task
 load('C:\Users\havgana\Desktop\DPhil\packaged_data\behaviour_structure_all_animals_11_12_25.mat') % behaviour
-load('C:\Users\havgana\Desktop\DPhil\packaged_data\combined_sig_day_all_protocols_07_30.mat') % sig days
+load('C:\Users\havgana\Desktop\DPhil\packaged_data\combined_sig_day_all_protocols_01_12_26.mat') % sig days
 
 % load master_U
 wf_U= plab.wf.load_master_U;
@@ -373,8 +371,8 @@ post_mask = session_significance == 1;
 
 %% ===== PLOT =====%%
 
-behavior_metric = session_ITI_licks; 
-behavior_label = 'ITI licks';
+behavior_metric = log(session_reaction_time); 
+behavior_label = 'RT';
 
 unique_animals = unique(session_animal);
 colors = distinguishable_colors(length(unique_animals));
@@ -385,7 +383,7 @@ hold on;
 for ai = 1:length(unique_animals)
     sess_mask = session_animal == unique_animals(ai);
 
-    combined_mask= sess_mask; % in case you want to filter pre-post learning
+    combined_mask= sess_mask & post_mask; % in case you want to filter pre-post learning
 
     x = behavior_metric(combined_mask);
     y = session_mPFC_activity(combined_mask);
@@ -433,7 +431,13 @@ cb.Position(2) = 0.35; % Adjust Y position
 set(gca, 'FontSize', 12, 'LineWidth', 1.2); box off;
 
 
-%% Run mixed-effects model 
+%% Run mixed-effects model to predict mPFC activity based on behavioural metrics
+
+session_ITI_licks;
+session_discrimination;
+session_reaction_time;
+
+
 % Requires Statistics Toolbox
 tbl = table(session_animal, behavior_metric, session_mPFC_activity, ...
             'VariableNames', {'Animal', 'Behavior', 'mPFC'});
@@ -442,38 +446,1067 @@ tbl = table(session_animal, behavior_metric, session_mPFC_activity, ...
 lme = fitlme(tbl, 'mPFC ~ Behavior + (1|Animal)');
 disp(lme);
 
-lme_slopes = fitlme(tbl, 'mPFC ~ Behavior + (Behavior|Animal)');
-compare(lme, lme_slopes) % Test if random slopes improve fit
+%% for a full model
 
+learning_stage= post_mask; % binary
+
+% Requires Statistics Toolbox
+tbl = table(session_animal, session_ITI_licks,session_discrimination,log(session_reaction_time), session_mPFC_activity, learning_stage,...
+            'VariableNames', {'Animal', 'ITI_licks','Discrimintation','RT' 'mPFC','learning_stage'});
+
+
+tbl.learning_stage_cat = categorical(tbl.learning_stage, [0 1], {'Pre', 'Post'}); % convert to categorical
+lme = fitlme(tbl, 'mPFC ~ (ITI_licks + Discrimintation + RT) * learning_stage_cat + (1|Animal)');
+
+% Random intercept model without pre post
+% lme = fitlme(tbl, 'mPFC ~ (ITI_licks + Discrimintation + RT) + (1|Animal)');
+disp(lme);
+
+%% Interaction plots (Split by Pre-Post)
+
+figure('Position', [100, 100, 1400, 400]);
+behaviors = {'ITI_licks', 'Discrimintation', 'RT'};
+titles = {'ITI Licks', 'CS+ vs CS- Discrimination', 'Reaction Time (log)'};
+
+% Find global y-limits first
+y_min = min(tbl.mPFC);
+y_max = max(tbl.mPFC);
+y_range = [y_min - 0.05*(y_max-y_min), y_max + 0.05*(y_max-y_min)];
+
+for i = 1:3
+    subplot(1, 3, i);
+    
+    % Pre-learning
+    pre_mask = tbl.learning_stage == 0;
+    scatter(tbl.(behaviors{i})(pre_mask), tbl.mPFC(pre_mask), 50, [0.7 0.7 0.7], 'filled', 'MarkerFaceAlpha', 0.5);
+    hold on;
+    
+    % Post-learning  
+    post_mask = tbl.learning_stage == 1;
+    scatter(tbl.(behaviors{i})(post_mask), tbl.mPFC(post_mask), 50, [0.2 0.5 0.8], 'filled', 'MarkerFaceAlpha', 0.5);
+    
+    % Fit lines
+    p_pre = polyfit(tbl.(behaviors{i})(pre_mask), tbl.mPFC(pre_mask), 1);
+    p_post = polyfit(tbl.(behaviors{i})(post_mask), tbl.mPFC(post_mask), 1);
+    
+    x_range = xlim;
+    x_fit = linspace(x_range(1), x_range(2), 100);
+    plot(x_fit, polyval(p_pre, x_fit), '--', 'Color', [0.7 0.7 0.7], 'LineWidth', 2);
+    plot(x_fit, polyval(p_post, x_fit), '-', 'Color', [0.2 0.5 0.8], 'LineWidth', 2);
+    
+    ylim(y_range); % Set consistent y-axis
+    
+    xlabel(titles{i}, 'FontSize', 11, 'FontWeight', 'bold');
+    if i == 1, ylabel('mPFC Activity', 'FontSize', 11, 'FontWeight', 'bold'); end
+    legend({'Pre', 'Post'}, 'Location', 'best');
+    set(gca, 'FontSize', 10);
+end
+
+%% Plot beta Coefficents 
+
+% Extract interaction coefficients
+interactions = [lme.Coefficients.Estimate(6); lme.Coefficients.Estimate(7); lme.Coefficients.Estimate(8)];
+CI_lower = [lme.Coefficients.Lower(6); lme.Coefficients.Lower(7); lme.Coefficients.Lower(8)];
+CI_upper = [lme.Coefficients.Upper(6); lme.Coefficients.Upper(7); lme.Coefficients.Upper(8)];
+p_values = [lme.Coefficients.pValue(6); lme.Coefficients.pValue(7); lme.Coefficients.pValue(8)];
+
+figure('Position', [100, 100, 500, 400]);
+hold on;
+
+for i = 1:3
+    errorbar(i, interactions(i), interactions(i)-CI_lower(i), CI_upper(i)-interactions(i), ...
+             'o', 'MarkerSize', 10, 'LineWidth', 2, 'MarkerFaceColor', [0.2 0.5 0.8]);
+    
+    % Add significance asterisks
+    if p_values(i) < 0.001
+        sig_text = '***';
+    elseif p_values(i) < 0.01
+        sig_text = '**';
+    elseif p_values(i) < 0.05
+        sig_text = '*';
+    else
+        sig_text = 'ns';
+    end
+    
+    % Position above the upper CI
+    y_pos = CI_upper(i) + 0.1 * abs(CI_upper(i));
+    text(i, y_pos, sig_text, 'HorizontalAlignment', 'center', 'FontSize', 14, 'FontWeight', 'bold');
+end
+
+plot([0 4], [0 0], 'k--', 'LineWidth', 1);
+xlim([0.5 3.5]);
+xticks(1:3);
+xticklabels({'ITI × Post', 'Discrim × Post', 'RT × Post'});
+ylabel('Interaction Coefficient', 'FontSize', 12, 'FontWeight', 'bold');
+title('Learning-Dependent Changes', 'FontSize', 13, 'FontWeight', 'bold');
+set(gca, 'FontSize', 11);
+
+
+%% Plot color coded bars for individual animal slopes 
+
+% First, extract individual animal ITI slopes (post-learning)
+lme_slopes = fitlme(tbl, 'mPFC ~ Discrimintation * learning_stage + (Discrimintation|Animal)');
 [~, ~, stats] = randomEffects(lme_slopes);
-animal_slopes = stats.Estimate(2:2:end); % Extract slope random effects
-animal_intercepts = stats.Estimate(1:2:end);
+animal_ITI_slopes = stats.Estimate(2:2:end);
+unique_animals_in_model = unique(tbl.Animal);
 
-% Plot distribution
-figure;
-histogram(animal_slopes, 10);
-xlabel('Animal-specific slope (ITI effect)');
-ylabel('Count');
-title('Heterogeneity in mPFC-ITI relationship');
+% Map slopes to mPFC groups
+slope_colors = nan(length(animal_ITI_slopes), 3);
+for i = 1:length(unique_animals_in_model)
+    ai = unique_animals_in_model(i);
+    if isKey(animal_groups, ai)
+        if animal_groups(ai) == 1
+            slope_colors(i, :) = cmPFC_plus;
+        else
+            slope_colors(i, :) = cmPFC_minus;
+        end
+    else
+        slope_colors(i, :) = [0.5 0.5 0.5];
+    end
+end
+
+% Plot histogram with individual animals colored
+figure('Position', [100, 100, 600, 500]);
+hold on;
+
+% Plot each animal's slope as a bar
+for i = 1:length(animal_ITI_slopes)
+    bar(i, animal_ITI_slopes(i), 'FaceColor', slope_colors(i, :), 'EdgeColor', 'k', 'LineWidth', 1.5,'FaceAlpha',0.5);
+end
+
+% Add zero line
+plot([0 length(animal_ITI_slopes)+1], [0 0], 'k--', 'LineWidth', 2);
+
+xlabel('Animal', 'FontSize', 12, 'FontWeight', 'bold');
+ylabel('ITI-mPFC Slope (Post-Learning)', 'FontSize', 12, 'FontWeight', 'bold');
+title('Individual Animal Slopes by Group', 'FontSize', 13, 'FontWeight', 'bold');
+
+% % Add legend
+% legend([bar(NaN, NaN, 'FaceColor', cmPFC_plus, 'EdgeColor', 'k','FaceAlpha'), ...
+%         bar(NaN, NaN, 'FaceColor', cmPFC_minus, 'EdgeColor', 'k')], ...
+%        {'mPFC+', 'mPFC-'}, 'Location', 'best', 'FontSize', 11);
+% set(gca, 'FontSize', 11);
 
 
-% Extract animal IDs and their slopes
-animal_ids_slopes = unique_animals;
-is_mPFC_plus = logical([0 1 0 0 1 0 1 1 1 0 0 0]'); % Your manual classification
 
-% Test separation
-[~, p] = ttest2(animal_slopes(is_mPFC_plus), animal_slopes(~is_mPFC_plus));
-fprintf('Slope difference: p = %.2e\n', p);
+%% Do animals show mPFC responses when CS+ starts to move?
+
+%% ===== EXTRACT PRE-LICK mPFC ACTIVITY =====
+
+protocol_idx = 1;
+animals = unique(widefield_animal_idx);
+ROI_to_extract = right_mPFC_ROI_mask;
+t_for_plot = added_time;
+curr_components= n_components;
+
+% Time buffer before first lick (exclude activity too close to motor act)
+pre_lick_buffer = 0.1; % seconds
+
+% Storage
+animal_results = struct();
+counter = 0;
+
+for ai = animals(:)'
+
+    % Find all post-learning days for this animal
+    sel = (widefield_animal_idx == ai) & (workflow_cat == protocol_idx) & (learning_index_animal == 1);
+    days_idx = find(sel);
+    
+    if isempty(days_idx), continue; end
+    
+    counter = counter + 1;
+    
+    % Map widefield_cat indices to behaviour_data day numbers
+    day_within_animal = nan(length(widefield_cat), 1);
+    animal_mask = widefield_animal_idx == ai;
+    day_within_animal(animal_mask) = 1:sum(animal_mask);
+    
+    % Collect all trials across post-learning days
+    all_mPFC_traces = [];
+    all_mPFC_pre_lick = [];
+    all_lick_latencies = [];
+    
+    for idx = days_idx(:)'
+        V_data = widefield_cat(idx).rewarded_stim_start_to_move_aligned_V;
+        if isempty(V_data), continue; end
+        
+        % Extract mPFC ROI traces
+        mPFC_traces = ap.wf_roi(wf_U(:,:,1:curr_components), V_data, [], [], ROI_to_extract);
+        mPFC_traces = squeeze(mPFC_traces); % Time x Trials
+        n_trials = size(mPFC_traces, 2);
+        
+        % Get lick latencies
+        day_num = day_within_animal(idx);
+        lick_lat = behaviour_data(ai).recording_day(day_num).cs_plus_latency_lick_to_move;
+        
+        % Ensure matching trial counts
+        if length(lick_lat) ~= n_trials
+            warning('Trial mismatch for animal %d day %d', ai, day_num);
+            continue;
+        end
+        
+        % Create pre-lick masked traces
+        mPFC_pre_lick = nan(size(mPFC_traces));
+        
+        for trial = 1:n_trials
+            first_lick_time = lick_lat(trial);
+            if isnan(first_lick_time), continue; end
+            
+            if first_lick_time >= 1
+                continue;
+            end
+
+            % Cutoff time: first lick - buffer
+            cutoff_time = first_lick_time - pre_lick_buffer;
+
+            % Create mask: 1 before cutoff, NaN after
+            pre_lick_mask = t_for_plot <= cutoff_time;
+            
+            % Apply mask
+            mPFC_pre_lick(pre_lick_mask, trial) = mPFC_traces(pre_lick_mask, trial);
+        end
+        
+        % Accumulate
+        all_mPFC_traces = [all_mPFC_traces, mPFC_traces];
+        all_mPFC_pre_lick = [all_mPFC_pre_lick, mPFC_pre_lick];
+        all_lick_latencies = [all_lick_latencies; lick_lat(:)];
+    end
+    
+    % Store results
+    animal_results(counter).animal_id = ai;
+    animal_results(counter).mPFC_traces_full = all_mPFC_traces;
+    animal_results(counter).mPFC_traces_pre_lick = all_mPFC_pre_lick;
+    animal_results(counter).lick_latencies = all_lick_latencies;
+    
+    % Compute averages
+    animal_results(counter).mean_full = mean(all_mPFC_traces, 2, 'omitnan');
+    animal_results(counter).mean_pre_lick = mean(all_mPFC_pre_lick, 2, 'omitnan');
+    
+    % Group assignment
+    if isKey(animal_groups, ai)
+        animal_results(counter).group = animal_groups(ai);
+    else
+        animal_results(counter).group = NaN;
+    end
+end
+
+% Trim
+animal_results = animal_results(1:counter);
+
+%% ===== VISUALIZE: COMPARE FULL VS PRE-LICK =====
+mPFC_plus_idx = [animal_results.group] == 1;
+mPFC_minus_idx = [animal_results.group] == 0;
+
+% Compute group averages
+mean_full_plus = mean(cat(2, animal_results(mPFC_plus_idx).mean_full), 2, 'omitnan');
+mean_full_minus = mean(cat(2, animal_results(mPFC_minus_idx).mean_full), 2, 'omitnan');
+
+mean_pre_lick_plus = mean(cat(2, animal_results(mPFC_plus_idx).mean_pre_lick), 2, 'omitnan');
+mean_pre_lick_minus = mean(cat(2, animal_results(mPFC_minus_idx).mean_pre_lick), 2, 'omitnan');
+
+% Plot group comparison
+figure('Position', [100, 100, 1200, 500]);
+
+% mPFC+ group
+subplot(1, 2, 1);
+hold on;
+plot(t_for_plot, mean_full_plus, '-', 'Color', cmPFC_plus, 'LineWidth', 2.5);
+plot(t_for_plot, mean_pre_lick_plus, '-', 'Color', [cmPFC_plus * 0.5], 'LineWidth', 2.5);
+plot([0 0], ylim, 'k--', 'LineWidth', 1.5);
+xlabel('Time from Movement (s)', 'FontSize', 12, 'FontWeight', 'bold');
+ylabel('mPFC Activity', 'FontSize', 12, 'FontWeight', 'bold');
+title('mPFC+ Animals', 'FontSize', 13, 'FontWeight', 'bold');
+legend({'Full trace', 'Pre-lick only'}, 'Location', 'best', 'FontSize', 10);
+xlim([-0.5 1]);
+set(gca, 'FontSize', 11);
+
+% mPFC- group
+subplot(1, 2, 2);
+hold on;
+plot(t_for_plot, mean_full_minus, '-', 'Color', cmPFC_minus, 'LineWidth', 2.5);
+plot(t_for_plot, mean_pre_lick_minus, '-', 'Color', [cmPFC_minus * 0.5], 'LineWidth', 2.5);
+plot([0 0], ylim, 'k--', 'LineWidth', 1.5);
+xlabel('Time from Movement (s)', 'FontSize', 12, 'FontWeight', 'bold');
+ylabel('mPFC Activity', 'FontSize', 12, 'FontWeight', 'bold');
+title('mPFC- Animals', 'FontSize', 13, 'FontWeight', 'bold');
+legend({'Full trace', 'Pre-lick only'}, 'Location', 'best', 'FontSize', 10);
+xlim([-0.5 1]);
+set(gca, 'FontSize', 11);
+
+sgtitle('mPFC Activity: Full vs Pre-Lick', 'FontSize', 14, 'FontWeight', 'bold');
+
+%% ===== VISUALIZE: INDIVIDUAL ANIMALS =====
+figure('Position', [100, 100, 1400, 800]);
+
+n_animals_plus = sum(mPFC_plus_idx);
+n_animals_minus = sum(mPFC_minus_idx);
+
+% mPFC+ animals
+for i = 1:n_animals_plus
+    idx = find(mPFC_plus_idx, i, 'first');
+    idx = idx(end);
+    
+    subplot(2, max(n_animals_plus, n_animals_minus), i);
+    hold on;
+    plot(t_for_plot, animal_results(idx).mean_full, '-', 'Color', cmPFC_plus, 'LineWidth', 2);
+    plot(t_for_plot, animal_results(idx).mean_pre_lick, '-', 'Color', [cmPFC_plus * 0.5], 'LineWidth', 2);
+    plot([0 0], ylim, 'k--', 'LineWidth', 1);
+    xlabel('Time (s)', 'FontSize', 8);
+    ylabel('mPFC Activity', 'FontSize', 8);
+    title(sprintf('M%d', animal_results(idx).animal_id), 'FontSize', 9);
+    xlim([-0.5 1]);
+    set(gca, 'FontSize', 7);
+end
+
+% mPFC- animals
+for i = 1:n_animals_minus
+    idx = find(mPFC_minus_idx, i, 'first');
+    idx = idx(end);
+    
+    subplot(2, max(n_animals_plus, n_animals_minus), max(n_animals_plus, n_animals_minus) + i);
+    hold on;
+    plot(t_for_plot, animal_results(idx).mean_full, '-', 'Color', cmPFC_minus, 'LineWidth', 2);
+    plot(t_for_plot, animal_results(idx).mean_pre_lick, '-', 'Color', [cmPFC_minus * 0.5], 'LineWidth', 2);
+    plot([0 0], ylim, 'k--', 'LineWidth', 1);
+    xlabel('Time (s)', 'FontSize', 8);
+    ylabel('mPFC Activity', 'FontSize', 8);
+    title(sprintf('M%d', animal_results(idx).animal_id), 'FontSize', 9);
+    xlim([-0.5 1]);
+    set(gca, 'FontSize', 7);
+end
+
+sgtitle('Individual Animals: Full (bright) vs Pre-Lick (dark)', 'FontSize', 12, 'FontWeight', 'bold');
+
+%% ===== TEST: mPFC PEAK TIMING vs LICK TIMING =====
+
+% Create a datastructure that includes mPFC activity sorted by latency and
+% the lick latencies on trial by trial basis
+
+protocol_idx = 1;
+animals = unique(widefield_animal_idx);
+ROI_to_extract = left_mPFC_ROI_mask;
+t_for_plot = added_time;
+
+% Analysis window for finding peak
+peak_window = t_for_plot >= 0 & t_for_plot <= 1; % 
+
+% Storage
+animal_results = struct();
+counter = 0;
+
+for ai = animals(:)'
+    % Find all post-learning days for this animal
+    sel = (widefield_animal_idx == ai) & (workflow_cat == protocol_idx) & (learning_index_animal == 1);
+    days_idx = find(sel);
+    
+    if isempty(days_idx), continue; end
+    
+    counter = counter + 1;
+    
+    % Map widefield_cat indices to behaviour_data day numbers
+    day_within_animal = nan(length(widefield_cat), 1);
+    animal_mask = widefield_animal_idx == ai;
+    day_within_animal(animal_mask) = 1:sum(animal_mask);
+    
+    % Collect all trials across post-learning days
+    all_mPFC_traces = [];
+    all_lick_latencies = [];
+    
+    for idx = days_idx(:)'
+        V_data = widefield_cat(idx).rewarded_stim_start_to_move_aligned_V;
+        if isempty(V_data), continue; end
+        
+        % Extract mPFC ROI traces
+        mPFC_traces = ap.wf_roi(wf_U(:,:,1:curr_components), V_data, [], [], ROI_to_extract);
+        mPFC_traces = squeeze(mPFC_traces); % Time x Trials
+        
+        % Get lick latencies
+        day_num = day_within_animal(idx);
+        lick_lat = behaviour_data(ai).recording_day(day_num).cs_plus_latency_lick_to_move;
+        
+        % Ensure matching trial counts
+        n_trials = size(mPFC_traces, 2);
+        if length(lick_lat) ~= n_trials
+            warning('Trial mismatch for animal %d day %d', ai, day_num);
+            continue;
+        end
+        
+        % Accumulate
+        all_mPFC_traces = [all_mPFC_traces, mPFC_traces];
+        all_lick_latencies = [all_lick_latencies; lick_lat(:)];
+    end
+    
+    % Remove invalid trials
+    valid = ~any(isnan(all_mPFC_traces), 1) & ~isnan(all_lick_latencies') & (all_lick_latencies'<=1); % cut off when latency was bigger than 1s
+    all_mPFC_traces = all_mPFC_traces(:, valid);
+    all_lick_latencies = all_lick_latencies(valid);
+    
+    if length(all_lick_latencies) < 30, continue; end % Need sufficient trials
+    
+    % Calculate peak mPFC latency for each trial
+    mPFC_peak_latencies = nan(length(all_lick_latencies), 1);
+    for trial = 1:length(all_lick_latencies)
+        trial_trace = all_mPFC_traces(peak_window, trial);
+        if all(isnan(trial_trace)), continue; end
+        
+        [~, peak_idx] = max(trial_trace);
+        peak_times = t_for_plot(peak_window);
+        mPFC_peak_latencies(trial) = peak_times(peak_idx);
+    end
+    
+    % Sort trials by lick latency
+    [sorted_lick_lat, sort_idx] = sort(all_lick_latencies);
+    sorted_mPFC_traces = all_mPFC_traces(:, sort_idx);
+    sorted_mPFC_peaks = mPFC_peak_latencies(sort_idx);
+    
+    % Store results
+    animal_results(counter).animal_id = ai;
+    animal_results(counter).sorted_lick_lat = sorted_lick_lat;
+    animal_results(counter).sorted_mPFC_traces = sorted_mPFC_traces;
+    animal_results(counter).sorted_mPFC_peaks = sorted_mPFC_peaks;
+    
+    % Group assignment
+    if isKey(animal_groups, ai)
+        animal_results(counter).group = animal_groups(ai);
+    else
+        animal_results(counter).group = NaN;
+    end
+end
+
+% Trim
+animal_results = animal_results(1:counter);
+
+
+%% Plot individual animal plots of mPFC peak vs lick latency with unity line
+
+n_animals_plus = sum(mPFC_plus_idx);
+n_animals_minus = sum(mPFC_minus_idx);
+
+% Storage for correlations
+correlations_plus = nan(n_animals_plus, 1);
+correlations_minus = nan(n_animals_minus, 1);
+
+figure('Position', [100, 100, 1400, 800]);
+
+% mPFC+ animals
+for i = 1:n_animals_plus
+    idx = find(mPFC_plus_idx, i, 'first');
+    idx = idx(end);
+    
+    subplot(2, max(n_animals_plus, n_animals_minus), i);
+    
+    % Get valid trials
+    valid = ~isnan(animal_results(idx).sorted_mPFC_peaks) & ...
+            ~isnan(animal_results(idx).sorted_lick_lat);
+    
+    lick_lat = animal_results(idx).sorted_lick_lat(valid);
+    peak_lat = animal_results(idx).sorted_mPFC_peaks(valid);
+    
+    % Scatter
+    scatter(lick_lat, peak_lat, 20, cmPFC_plus, 'filled', 'MarkerFaceAlpha', 0.4);
+    hold on;
+    
+    % Unity line (perfect behavior-locking)
+    plot([0 1], [0 1], 'k--', 'LineWidth', 1.5);
+    
+    % Fit line
+    if length(lick_lat) > 5
+        p = polyfit(lick_lat, peak_lat, 1);
+        x_fit = [min(lick_lat), max(lick_lat)];
+        plot(x_fit, polyval(p, x_fit), 'r-', 'LineWidth', 2);
+    end
+    
+    % Calculate correlation
+    r = corr(lick_lat, peak_lat, 'Type', 'Spearman');
+    correlations_plus(i) = r;
+    
+    xlabel('Lick Latency (s)', 'FontSize', 8);
+    ylabel('mPFC Peak Latency (s)', 'FontSize', 8);
+    title(sprintf('M%d: r=%.2f', animal_results(idx).animal_id, r), 'FontSize', 9);
+    axis equal; xlim([0 1]); ylim([0 1]);
+    set(gca, 'FontSize', 7);
+end
+
+% mPFC- animals
+for i = 1:n_animals_minus
+    idx = find(mPFC_minus_idx, i, 'first');
+    idx = idx(end);
+    
+    subplot(2, max(n_animals_plus, n_animals_minus), max(n_animals_plus, n_animals_minus) + i);
+    
+    % Get valid trials
+    valid = ~isnan(animal_results(idx).sorted_mPFC_peaks) & ...
+            ~isnan(animal_results(idx).sorted_lick_lat);
+    
+    lick_lat = animal_results(idx).sorted_lick_lat(valid);
+    peak_lat = animal_results(idx).sorted_mPFC_peaks(valid);
+    
+    % Scatter
+    scatter(lick_lat, peak_lat, 20, cmPFC_minus, 'filled', 'MarkerFaceAlpha', 0.4);
+    hold on;
+    
+    % Unity line (perfect behavior-locking)
+    plot([0 1], [0 1], 'k--', 'LineWidth', 1.5);
+    
+    % Fit line
+    if length(lick_lat) > 5
+        p = polyfit(lick_lat, peak_lat, 1);
+        x_fit = [min(lick_lat), max(lick_lat)];
+        plot(x_fit, polyval(p, x_fit), 'r-', 'LineWidth', 2);
+    end
+    
+    % Calculate correlation
+    r = corr(lick_lat, peak_lat, 'Type', 'Spearman');
+    correlations_minus(i) = r;
+    
+    xlabel('Lick Latency (s)', 'FontSize', 8);
+    ylabel('mPFC Peak Latency (s)', 'FontSize', 8);
+    title(sprintf('M%d: r=%.2f', animal_results(idx).animal_id, r), 'FontSize', 9);
+    axis equal; xlim([0 1]); ylim([0 1]);
+    set(gca, 'FontSize', 7);
+end
+
+sgtitle('mPFC Peak Timing vs Lick Timing (Dashed=Unity, Red=Fit)', ...
+        'FontSize', 12, 'FontWeight', 'bold');
+
+%% ===== GROUP COMPARISON =====
+figure('Position', [100, 100, 500, 400]);
+hold on;
+
+scatter(ones(n_animals_plus, 1), correlations_plus, 100, cmPFC_plus, 'filled', ...
+        'MarkerEdgeColor', 'k', 'LineWidth', 1.5, 'MarkerFaceAlpha', 0.7);
+scatter(2*ones(n_animals_minus, 1), correlations_minus, 100, cmPFC_minus, 'filled', ...
+        'MarkerEdgeColor', 'k', 'LineWidth', 1.5, 'MarkerFaceAlpha', 0.7);
+
+plot([0.5 2.5], [0 0], 'k--', 'LineWidth', 1.5);
+xlim([0.5 2.5]); xticks([1 2]); xticklabels({'mPFC+', 'mPFC-'});
+ylabel('Correlation (Peak Timing vs Lick Timing)', 'FontSize', 12, 'FontWeight', 'bold');
+title('Behavior-Locking of mPFC Timing', 'FontSize', 13, 'FontWeight', 'bold');
+set(gca, 'FontSize', 11);
+
+% Statistical test
+[~, p_group] = ttest2(correlations_plus, correlations_minus);
+
+fprintf('\n===== mPFC TIMING vs LICK TIMING =====\n');
+fprintf('mPFC+: mean r = %.3f ± %.3f\n', mean(correlations_plus), std(correlations_plus));
+fprintf('mPFC-: mean r = %.3f ± %.3f\n', mean(correlations_minus), std(correlations_minus));
+fprintf('Group difference: p = %.4f\n', p_group);
+
+% Add significance to plot
+if p_group < 0.05
+    y_max = max([correlations_plus; correlations_minus]) * 1.1;
+    plot([1 2], [y_max y_max], 'k-', 'LineWidth', 1.5);
+    if p_group < 0.001
+        text(1.5, y_max*1.05, '***', 'HorizontalAlignment', 'center', 'FontSize', 14);
+    elseif p_group < 0.01
+        text(1.5, y_max*1.05, '**', 'HorizontalAlignment', 'center', 'FontSize', 14);
+    else
+        text(1.5, y_max*1.05, '*', 'HorizontalAlignment', 'center', 'FontSize', 14);
+    end
+end
+
+%%
+%% ===== ANALYSIS 1: PRE-MOVEMENT mPFC vs STATIC TIME =====
+
+protocol_idx = 1;
+animals = unique(widefield_animal_idx);
+ROI_to_extract = left_mPFC_ROI_mask;
+t_for_plot = added_time;
+
+% Window for extracting pre-movement activity
+pre_movement_window = t_for_plot >= -0.2 & t_for_plot <= 0;
+
+% Storage
+animal_results = struct();
+counter = 0;
+
+for ai = animals(:)'
+    % Find all post-learning days for this animal
+    sel = (widefield_animal_idx == ai) & (workflow_cat == protocol_idx) & (learning_index_animal == 1);
+    days_idx = find(sel);
+    
+    if isempty(days_idx), continue; end
+    
+    counter = counter + 1;
+    
+    % Map widefield_cat indices to behaviour_data day numbers
+    day_within_animal = nan(length(widefield_cat), 1);
+    animal_mask = widefield_animal_idx == ai;
+    day_within_animal(animal_mask) = 1:sum(animal_mask);
+    
+    % Collect all trials across post-learning days
+    all_pre_movement_activity = [];
+    all_static_times = [];
+    
+    for idx = days_idx(:)'
+        V_data = widefield_cat(idx).rewarded_stim_start_to_move_aligned_V;
+        if isempty(V_data), continue; end
+        
+        % Extract mPFC ROI traces
+        mPFC_traces = ap.wf_roi(wf_U(:,:,1:curr_components), V_data, [], [], ROI_to_extract);
+        mPFC_traces = squeeze(mPFC_traces); % Time x Trials
+        n_trials = size(mPFC_traces, 2);
+        
+        % Extract pre-movement activity (mean in window)
+        pre_movement_activity = max(mPFC_traces(pre_movement_window, :), [],1)';
+        
+        % Get static times
+        day_num = day_within_animal(idx);
+
+        cs_plus_mask= behaviour_data(ai).recording_day(day_num).cs_labels;
+        % Get static times and lick latencies
+        static_times = behaviour_data(ai).recording_day(day_num).all_static_times(cs_plus_mask==1);
+    
+        
+        % Ensure matching trial counts
+        if length(static_times) ~= n_trials
+            warning('Trial mismatch for animal %d day %d', ai, day_num);
+            continue;
+        end
+        
+        % Accumulate
+        all_pre_movement_activity = [all_pre_movement_activity; pre_movement_activity];
+        all_static_times = [all_static_times; static_times(:)];
+    end
+    
+    % Remove invalid trials
+    valid = ~isnan(all_pre_movement_activity) & ~isnan(all_static_times);
+    all_pre_movement_activity = all_pre_movement_activity(valid);
+    all_static_times = all_static_times(valid);
+    
+    if length(all_static_times) < 10, continue; end
+    
+    % Calculate correlation
+    [r, p] = corr(all_static_times, all_pre_movement_activity, 'Type', 'Spearman');
+    
+    % Store results
+    animal_results(counter).animal_id = ai;
+    animal_results(counter).static_times = all_static_times;
+    animal_results(counter).pre_movement_activity = all_pre_movement_activity;
+    animal_results(counter).correlation = r;
+    animal_results(counter).p_value = p;
+    
+    % Group assignment
+    if isKey(animal_groups, ai)
+        animal_results(counter).group = animal_groups(ai);
+    else
+        animal_results(counter).group = NaN;
+    end
+end
+
+% Trim
+animal_results = animal_results(1:counter);
+
+%% ===== COMPARE GROUPS =====
+mPFC_plus_idx = [animal_results.group] == 1;
+mPFC_minus_idx = [animal_results.group] == 0;
+
+correlations_plus = [animal_results(mPFC_plus_idx).correlation];
+correlations_minus = [animal_results(mPFC_minus_idx).correlation];
+
+% Statistical tests
+[~, p_group] = ttest2(correlations_plus, correlations_minus);
+[~, p_plus_zero] = ttest(correlations_plus);
+[~, p_minus_zero] = ttest(correlations_minus);
+
+fprintf('\n===== PRE-MOVEMENT mPFC vs STATIC TIME =====\n');
+fprintf('mPFC+: mean r = %.3f ± %.3f\n', mean(correlations_plus), std(correlations_plus));
+fprintf('mPFC-: mean r = %.3f ± %.3f\n', mean(correlations_minus), std(correlations_minus));
+fprintf('Group difference: p = %.4f\n', p_group);
+fprintf('\nmPFC+ different from zero: p = %.4f\n', p_plus_zero);
+fprintf('mPFC- different from zero: p = %.4f\n', p_minus_zero);
+
+%% ===== VISUALIZE: INDIVIDUAL SCATTER PLOTS =====
+n_animals_plus = sum(mPFC_plus_idx);
+n_animals_minus = sum(mPFC_minus_idx);
+
+figure('Position', [100, 100, 1400, 800]);
+
+% mPFC+ animals
+for i = 1:n_animals_plus
+    idx = find(mPFC_plus_idx, i, 'first');
+    idx = idx(end);
+    
+    subplot(2, max(n_animals_plus, n_animals_minus), i);
+    scatter(animal_results(idx).static_times, animal_results(idx).pre_movement_activity, ...
+            30, cmPFC_plus, 'filled', 'MarkerFaceAlpha', 0.4);
+    hold on;
+    
+    % Fit line
+    p_coef = polyfit(animal_results(idx).static_times, animal_results(idx).pre_movement_activity, 1);
+    x_fit = [min(animal_results(idx).static_times), max(animal_results(idx).static_times)];
+    
+    if animal_results(idx).p_value < 0.05
+        plot(x_fit, polyval(p_coef, x_fit), 'r-', 'LineWidth', 2);
+    else
+        plot(x_fit, polyval(p_coef, x_fit), 'k--', 'LineWidth', 1.5);
+    end
+    
+    xlabel('Static Time (s)', 'FontSize', 8);
+    ylabel('Pre-Movement mPFC', 'FontSize', 8);
+    title(sprintf('M%d: r=%.2f, p=%.3f', animal_results(idx).animal_id, ...
+          animal_results(idx).correlation, animal_results(idx).p_value), 'FontSize', 9);
+    set(gca, 'FontSize', 7);
+end
+
+% mPFC- animals
+for i = 1:n_animals_minus
+    idx = find(mPFC_minus_idx, i, 'first');
+    idx = idx(end);
+    
+    subplot(2, max(n_animals_plus, n_animals_minus), max(n_animals_plus, n_animals_minus) + i);
+    scatter(animal_results(idx).static_times, animal_results(idx).pre_movement_activity, ...
+            30, cmPFC_minus, 'filled', 'MarkerFaceAlpha', 0.4);
+    hold on;
+    
+    % Fit line
+    p_coef = polyfit(animal_results(idx).static_times, animal_results(idx).pre_movement_activity, 1);
+    x_fit = [min(animal_results(idx).static_times), max(animal_results(idx).static_times)];
+    
+    if animal_results(idx).p_value < 0.05
+        plot(x_fit, polyval(p_coef, x_fit), 'r-', 'LineWidth', 2);
+    else
+        plot(x_fit, polyval(p_coef, x_fit), 'k--', 'LineWidth', 1.5);
+    end
+    
+    xlabel('Static Time (s)', 'FontSize', 8);
+    ylabel('Pre-Movement mPFC', 'FontSize', 8);
+    title(sprintf('M%d: r=%.2f, p=%.3f', animal_results(idx).animal_id, ...
+          animal_results(idx).correlation, animal_results(idx).p_value), 'FontSize', 9);
+    set(gca, 'FontSize', 7);
+end
+
+sgtitle('Pre-Movement mPFC Activity vs Static Time (-200 to 0ms)', ...
+        'FontSize', 12, 'FontWeight', 'bold');
+
+%% ===== VISUALIZE: GROUP COMPARISON =====
+figure('Position', [100, 100, 500, 400]);
+hold on;
+
+scatter(ones(n_animals_plus, 1), correlations_plus, 100, cmPFC_plus, 'filled', ...
+        'MarkerEdgeColor', 'k', 'LineWidth', 1.5, 'MarkerFaceAlpha', 0.7);
+scatter(2*ones(n_animals_minus, 1), correlations_minus, 100, cmPFC_minus, 'filled', ...
+        'MarkerEdgeColor', 'k', 'LineWidth', 1.5, 'MarkerFaceAlpha', 0.7);
+
+plot([0.5 2.5], [0 0], 'k--', 'LineWidth', 1.5);
+xlim([0.5 2.5]); xticks([1 2]); xticklabels({'mPFC+', 'mPFC-'});
+ylabel('Correlation (Static Time vs Pre-Movement mPFC)', 'FontSize', 12, 'FontWeight', 'bold');
+title('Temporal Expectation Encoding', 'FontSize', 13, 'FontWeight', 'bold');
+set(gca, 'FontSize', 11);
+
+% Add significance
+if p_group < 0.05
+    y_max = max([correlations_plus; correlations_minus]) * 1.1;
+    plot([1 2], [y_max y_max], 'k-', 'LineWidth', 1.5);
+    if p_group < 0.001
+        text(1.5, y_max*1.05, '***', 'HorizontalAlignment', 'center', 'FontSize', 14);
+    elseif p_group < 0.01
+        text(1.5, y_max*1.05, '**', 'HorizontalAlignment', 'center', 'FontSize', 14);
+    else
+        text(1.5, y_max*1.05, '*', 'HorizontalAlignment', 'center', 'FontSize', 14);
+    end
+end
+%% archived
 
 
 
-%% Fit Model Seperately for pre-post
 
-% Fit models separately
-lme_pre = fitlme(tbl(pre_mask, :), 'mPFC ~ Behavior + (Behavior|Animal)');
-lme_post = fitlme(tbl(post_mask, :), 'mPFC ~ Behavior + (Behavior|Animal)');
 
-% Compare fixed effects
-fprintf('Pre: β = %.2e, p = %.2e\n', lme_pre.Coefficients.Estimate(2), lme_pre.Coefficients.pValue(2));
-fprintf('Post: β = %.2e, p = %.2e\n', lme_post.Coefficients.Estimate(2), lme_post.Coefficients.pValue(2));
 
+
+%% ===== TEST TEMPORAL SHIFT ACROSS LICK BINS =====
+protocol_idx = 1;
+animals = unique(widefield_animal_idx);
+ROI_to_extract = left_mPFC_ROI_mask;
+t_for_plot = added_time;
+
+% Analysis window for finding peak
+peak_window = t_for_plot >= 0 & t_for_plot <= 0.9;
+
+% Number of bins for lick latency
+n_bins = 3; % Terciles: fast, medium, slow lickers
+
+% Storage
+animal_results = struct();
+counter = 0;
+
+for ai = animals(:)'
+    % Find all post-learning days for this animal
+    sel = (widefield_animal_idx == ai) & (workflow_cat == protocol_idx) & (learning_index_animal == 1);
+    days_idx = find(sel);
+    
+    if isempty(days_idx), continue; end
+    
+    counter = counter + 1;
+    
+    % Map widefield_cat indices to behaviour_data day numbers
+    day_within_animal = nan(length(widefield_cat), 1);
+    animal_mask = widefield_animal_idx == ai;
+    day_within_animal(animal_mask) = 1:sum(animal_mask);
+    
+    % Collect all trials across post-learning days
+    all_mPFC_traces = [];
+    all_lick_latencies = [];
+    
+    for idx = days_idx(:)'
+        V_data = widefield_cat(idx).rewarded_stim_start_to_move_aligned_V;
+        if isempty(V_data), continue; end
+        
+        % Extract mPFC ROI traces
+        mPFC_traces = ap.wf_roi(wf_U(:,:,1:curr_components), V_data, [], [], ROI_to_extract);
+        mPFC_traces = squeeze(mPFC_traces); % Time x Trials
+        
+        % Get lick latencies
+        day_num = day_within_animal(idx);
+        lick_lat = behaviour_data(ai).recording_day(day_num).cs_plus_latency_lick_to_move;
+        
+        % Ensure matching trial counts
+        n_trials = size(mPFC_traces, 2);
+        if length(lick_lat) ~= n_trials
+            warning('Trial mismatch for animal %d day %d', ai, day_num);
+            continue;
+        end
+        
+        % Accumulate
+        all_mPFC_traces = [all_mPFC_traces, mPFC_traces];
+        all_lick_latencies = [all_lick_latencies; lick_lat(:)];
+    end
+    
+    % Remove invalid trials
+    valid = ~any(isnan(all_mPFC_traces), 1) & ~isnan(all_lick_latencies');
+    all_mPFC_traces = all_mPFC_traces(:, valid);
+    all_lick_latencies = all_lick_latencies(valid);
+    
+    if length(all_lick_latencies) < 30, continue; end % Need sufficient trials
+    
+    % Sort trials by lick latency and bin
+    [sorted_lick_lat, sort_idx] = sort(all_lick_latencies);
+    sorted_mPFC_traces = all_mPFC_traces(:, sort_idx);
+    
+    % Divide into bins
+    trials_per_bin = floor(length(sorted_lick_lat) / n_bins);
+    
+    bin_peak_latencies = nan(n_bins, 1);
+    bin_traces = cell(n_bins, 1);
+    bin_lick_means = nan(n_bins, 1);
+    
+    for bin = 1:n_bins
+        if bin < n_bins
+            bin_trials = ((bin-1)*trials_per_bin + 1):(bin*trials_per_bin);
+        else
+            bin_trials = ((bin-1)*trials_per_bin + 1):length(sorted_lick_lat);
+        end
+        
+        % Average trace for this bin
+        bin_trace = mean(sorted_mPFC_traces(:, bin_trials), 2, 'omitnan');
+        bin_traces{bin} = bin_trace;
+        
+        % Find peak latency
+        [~, peak_idx] = max(bin_trace(peak_window));
+        peak_times = t_for_plot(peak_window);
+        bin_peak_latencies(bin) = peak_times(peak_idx);
+        
+        % Mean lick latency for this bin
+        bin_lick_means(bin) = mean(sorted_lick_lat(bin_trials));
+    end
+    
+    % Quantify temporal shift: correlation between bin lick latency and bin peak latency
+    temporal_shift = corr(bin_lick_means, bin_peak_latencies, 'Type', 'Spearman');
+    
+    % Also compute range of peak latencies across bins
+    peak_latency_range = max(bin_peak_latencies) - min(bin_peak_latencies);
+    
+    % Store results
+    animal_results(counter).animal_id = ai;
+    animal_results(counter).bin_lick_means = bin_lick_means;
+    animal_results(counter).bin_peak_latencies = bin_peak_latencies;
+    animal_results(counter).bin_traces = bin_traces;
+    animal_results(counter).temporal_shift = temporal_shift;
+    animal_results(counter).peak_latency_range = peak_latency_range;
+    animal_results(counter).sorted_traces = sorted_mPFC_traces;
+    
+    % Group assignment
+    if isKey(animal_groups, ai)
+        animal_results(counter).group = animal_groups(ai);
+    else
+        animal_results(counter).group = NaN;
+    end
+end
+
+% Trim
+animal_results = animal_results(1:counter);
+
+%% ===== COMPARE GROUPS =====
+mPFC_plus_idx = [animal_results.group] == 1;
+mPFC_minus_idx = [animal_results.group] == 0;
+
+temporal_shift_plus = [animal_results(mPFC_plus_idx).temporal_shift];
+temporal_shift_minus = [animal_results(mPFC_minus_idx).temporal_shift];
+
+peak_range_plus = [animal_results(mPFC_plus_idx).peak_latency_range];
+peak_range_minus = [animal_results(mPFC_minus_idx).peak_latency_range];
+
+% Statistical tests
+[~, p_shift] = ttest2(temporal_shift_plus, temporal_shift_minus);
+[~, p_range] = ttest2(peak_range_plus, peak_range_minus);
+
+fprintf('\n===== TEMPORAL SHIFT ANALYSIS =====\n');
+fprintf('Temporal shift correlation:\n');
+fprintf('  mPFC+: mean = %.3f ± %.3f\n', mean(temporal_shift_plus), std(temporal_shift_plus));
+fprintf('  mPFC-: mean = %.3f ± %.3f\n', mean(temporal_shift_minus), std(temporal_shift_minus));
+fprintf('  Group difference: p = %.4f\n', p_shift);
+fprintf('\nPeak latency range (s):\n');
+fprintf('  mPFC+: mean = %.3f ± %.3f\n', mean(peak_range_plus), std(peak_range_plus));
+fprintf('  mPFC-: mean = %.3f ± %.3f\n', mean(peak_range_minus), std(peak_range_minus));
+fprintf('  Group difference: p = %.4f\n', p_range);
+
+%% ===== VISUALIZE: INDIVIDUAL ANIMAL HEATMAPS =====
+n_animals_plus = sum(mPFC_plus_idx);
+n_animals_minus = sum(mPFC_minus_idx);
+
+figure('Position', [100, 100, 1400, 800]);
+
+% mPFC+ animals
+for i = 1:n_animals_plus
+    idx = find(mPFC_plus_idx, i, 'first');
+    idx = idx(end);
+    
+    ax = subplot(2, max(n_animals_plus, n_animals_minus), i);
+    imagesc(t_for_plot, 1:size(animal_results(idx).sorted_traces, 2), ...
+            animal_results(idx).sorted_traces');
+    colormap(ax, ap.colormap('KWG')); % Set colormap for this specific axes
+    clim([-max(abs(animal_results(idx).sorted_traces(:))), max(abs(animal_results(idx).sorted_traces(:)))]);
+    hold on;
+    plot([0 0], ylim, 'k--', 'LineWidth', 2);
+    xlabel('Time (s)', 'FontSize', 8);
+    ylabel('Trials (sorted)', 'FontSize', 8);
+    title(sprintf('M%d: r=%.2f', animal_results(idx).animal_id, animal_results(idx).temporal_shift), 'FontSize', 9);
+    xlim([-0.5 1]);
+    set(gca, 'FontSize', 7);
+end
+
+% mPFC- animals
+for i = 1:n_animals_minus
+    idx = find(mPFC_minus_idx, i, 'first');
+    idx = idx(end);
+    
+    ax = subplot(2, max(n_animals_plus, n_animals_minus), max(n_animals_plus, n_animals_minus) + i);
+    imagesc(t_for_plot, 1:size(animal_results(idx).sorted_traces, 2), ...
+            animal_results(idx).sorted_traces');
+    colormap(ax, ap.colormap('KWP')); % Set colormap for this specific axes
+    clim([-max(abs(animal_results(idx).sorted_traces(:))), max(abs(animal_results(idx).sorted_traces(:)))]);
+    hold on;
+    plot([0 0], ylim, 'k--', 'LineWidth', 2);
+    xlabel('Time (s)', 'FontSize', 8);
+    ylabel('Trials (sorted)', 'FontSize', 8);
+    title(sprintf('M%d: r=%.2f', animal_results(idx).animal_id, animal_results(idx).temporal_shift), 'FontSize', 9);
+    xlim([-0.5 1]);
+    set(gca, 'FontSize', 7);
+end
+
+sgtitle('mPFC Activity Sorted by Lick Latency', 'FontSize', 12, 'FontWeight', 'bold');
+
+%% ===== VISUALIZE: GROUP COMPARISON =====
+figure('Position', [100, 100, 1000, 400]);
+
+subplot(1, 2, 1);
+hold on;
+scatter(ones(n_animals_plus, 1), temporal_shift_plus, 100, cmPFC_plus, 'filled', ...
+        'MarkerEdgeColor', 'k', 'LineWidth', 1.5, 'MarkerFaceAlpha', 0.7);
+scatter(2*ones(n_animals_minus, 1), temporal_shift_minus, 100, cmPFC_minus, 'filled', ...
+        'MarkerEdgeColor', 'k', 'LineWidth', 1.5, 'MarkerFaceAlpha', 0.7);
+plot([0.5 2.5], [0 0], 'k--', 'LineWidth', 1.5);
+xlim([0.5 2.5]); xticks([1 2]); xticklabels({'mPFC+', 'mPFC-'});
+ylabel('Temporal Shift', 'FontSize', 12, 'FontWeight', 'bold');
+title('Peak Shifts with Lick Timing?', 'FontSize', 13, 'FontWeight', 'bold');
+set(gca, 'FontSize', 11);
+
+subplot(1, 2, 2);
+hold on;
+scatter(ones(n_animals_plus, 1), peak_range_plus, 100, cmPFC_plus, 'filled', ...
+        'MarkerEdgeColor', 'k', 'LineWidth', 1.5, 'MarkerFaceAlpha', 0.7);
+scatter(2*ones(n_animals_minus, 1), peak_range_minus, 100, cmPFC_minus, 'filled', ...
+        'MarkerEdgeColor', 'k', 'LineWidth', 1.5, 'MarkerFaceAlpha', 0.7);
+xlim([0.5 2.5]); xticks([1 2]); xticklabels({'mPFC+', 'mPFC-'});
+ylabel('Peak Latency Range (s)', 'FontSize', 12, 'FontWeight', 'bold');
+title('Temporal Variability', 'FontSize', 13, 'FontWeight', 'bold');
+set(gca, 'FontSize', 11);
+
+
+
+%% ===== VISUALIZE: HEATMAPS WITH PEAK OVERLAY =====
+mPFC_plus_idx = [animal_results.group] == 1;
+mPFC_minus_idx = [animal_results.group] == 0;
+
+n_animals_plus = sum(mPFC_plus_idx);
+n_animals_minus = sum(mPFC_minus_idx);
+
+figure('Position', [100, 100, 1400, 800]);
+
+
+% mPFC+ animals
+for i = 1:n_animals_plus
+    idx = find(mPFC_plus_idx, i, 'first');
+    idx = idx(end);
+    
+    ax = subplot(2, max(n_animals_plus, n_animals_minus), i);
+    imagesc(t_for_plot, 1:size(animal_results(idx).sorted_mPFC_traces, 2), ...
+            animal_results(idx).sorted_mPFC_traces');
+    colormap(ax, ap.colormap('KWG'));
+    % clim([-max(abs(animal_results(idx).sorted_mPFC_traces(:))), ...
+    %       max(abs(animal_results(idx).sorted_mPFC_traces(:)))]);
+    clim([-0.026,0.026]);
+    hold on;
+    
+    % % Overlay peak latencies
+    % plot(animal_results(idx).sorted_mPFC_peaks, 1:length(animal_results(idx).sorted_mPFC_peaks), ...
+    %      'r-', 'LineWidth', 2);
+    % 
+    % % Overlay lick latencies
+    % plot(animal_results(idx).sorted_lick_lat, 1:length(animal_results(idx).sorted_lick_lat), ...
+    %      'k--', 'LineWidth', 2);
+    
+    % Movement onset line
+    plot([0 0], ylim, 'k-', 'LineWidth', 2);
+    
+    xlabel('Time (s)', 'FontSize', 8);
+    ylabel('Trials (sorted by lick)', 'FontSize', 8);
+    title(sprintf('M%d', animal_results(idx).animal_id), 'FontSize', 9);
+    xlim([-0.5 1]);
+    set(gca, 'FontSize', 7);
+end
+
+% mPFC- animals
+for i = 1:n_animals_minus
+    idx = find(mPFC_minus_idx, i, 'first');
+    idx = idx(end);
+    
+    ax = subplot(2, max(n_animals_plus, n_animals_minus), max(n_animals_plus, n_animals_minus) + i);
+    imagesc(t_for_plot, 1:size(animal_results(idx).sorted_mPFC_traces, 2), ...
+            animal_results(idx).sorted_mPFC_traces');
+    colormap(ax, ap.colormap('KWP'));
+    % clim([-max(abs(animal_results(idx).sorted_mPFC_traces(:))), ...
+    %       max(abs(animal_results(idx).sorted_mPFC_traces(:)))]);
+    clim([-0.026,0.026]);
+    hold on;
+    
+    % % Overlay peak latencies
+    % plot(animal_results(idx).sorted_mPFC_peaks, 1:length(animal_results(idx).sorted_mPFC_peaks), ...
+    %      'r-', 'LineWidth', 2);
+    % 
+    % % Overlay lick latencies
+    % plot(animal_results(idx).sorted_lick_lat, 1:length(animal_results(idx).sorted_lick_lat), ...
+    %      'k--', 'LineWidth', 2);
+    % 
+    % Movement onset line
+    plot([0 0], ylim, 'k-', 'LineWidth', 2);
+    
+    xlabel('Time (s)', 'FontSize', 8);
+    ylabel('Trials (sorted by lick)', 'FontSize', 8);
+    title(sprintf('M%d', animal_results(idx).animal_id), 'FontSize', 9);
+    xlim([-0.5 1]);
+    set(gca, 'FontSize', 7);
+end
+
+sgtitle('mPFC Activity Sorted by Lick Latency (Red=mPFC peak, Black=Lick)', ...
+        'FontSize', 12, 'FontWeight', 'bold');

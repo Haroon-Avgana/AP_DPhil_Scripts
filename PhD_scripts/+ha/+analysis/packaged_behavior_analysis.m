@@ -85,7 +85,7 @@ learning_index_animal = vertcat(combined_sig_day_all_protocols{:});
 %% Plot a single animal raster plot and PSTH aligned to stim onset/stim in center
 
 % Define parameters
-animal_idx = 2; % Choose your animal index here
+animal_idx = 1; % Choose your animal index here
 lick_detection_time_window = [-5 5];
 
 % Modern color scheme
@@ -497,7 +497,7 @@ sgtitle('Lick Behavior Aligned to Stimulus Onset', 'FontSize', 16, 'FontWeight',
 %% Plots indivdual animal PSTH aligned to stim onset/stim center - CS+ and CS- overlaid
 
 % Define parameters
-animal_idx = 2; % Choose your animal index here
+animal_idx = 16; % Choose your animal index here
 lick_detection_time_window = [-5 5];
 
 % Color scheme matching your style

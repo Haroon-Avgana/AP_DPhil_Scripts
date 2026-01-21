@@ -530,10 +530,8 @@ for ai = animals(:)'
         
         cs_plus_mask= behaviour_data(ai).recording_day(day_num).cs_labels;
         % Get static times and lick latencies
-        static_times = behaviour_data(ai).recording_day(day_num).all_static_times(cs_plus_mask==1);
+        static_times = behaviour_data(ai).recording_day(day_num).all_static_times;
         lick_lat = behaviour_data(ai).recording_day(day_num).cs_plus_latency_lick_to_move;
-
-        x= behaviour_data(ai).recording_day(day_num).right_stim_on_times;
         
         % Ensure matching trial counts
         if length(static_times) ~= length(lick_lat)
@@ -547,7 +545,7 @@ for ai = animals(:)'
     end
     
     % Remove invalid trials
-    valid = ~isnan(all_static_times) & ~isnan(all_lick_latencies) & (all_lick_latencies<=1);
+    valid = ~isnan(all_static_times) & ~isnan(all_lick_latencies);
     all_static_times = all_static_times(valid);
     all_lick_latencies = all_lick_latencies(valid);
     

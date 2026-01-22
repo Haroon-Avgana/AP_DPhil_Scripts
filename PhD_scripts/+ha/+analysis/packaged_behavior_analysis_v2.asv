@@ -11,8 +11,8 @@ set(groot, "defaultFigureWindowStyle", "normal");
 
 %% Load variables and define colours
 
-load("C:\Users\havgana\Desktop\DPhil\packaged_data\behaviour_structure_all_animals.mat") % sig days
-load("C:\Users\havgana\Desktop\DPhil\packaged_data\combined_sig_day_all_protocols.mat") % behaviour
+load("C:\Users\havgana\Desktop\DPhil\packaged_data\behaviour_structure_all_animals_14_01_26.mat") % sig days
+load("C:\Users\havgana\Desktop\DPhil\packaged_data\combined_sig_day_all_protocols_14_01_26.mat") % behaviour
 
 % set up two custom colors
 cLearner    = [0 0.6 0];   % dark green
@@ -39,6 +39,103 @@ workflow_cat = grp2idx(horzcat(workflow_animal{:}));
 % Create a logical learning index variable (n all days x [0,1])
 learning_index_animal = vertcat(combined_sig_day_all_protocols{:});
 
+%% Plot individual animal CS+ and CS- overlaid PSTHs across all days for a given protocol
+animal_list = {behaviour_data.animal_id};
+target_workflow = {'visual_operant_lick_two_stim_static'};
+
+% Define event to plot
+event_to_plot = 'final_position';  % on or final_position
+
+% Construct full field names
+cs_plus_field = ['avg_psth_rewarded_stim_' event_to_plot];
+cs_minus_field = ['avg_psth_non_rewarded_stim_' event_to_plot];
+
+% Iterate over animals
+for animal_idx = 1:length(animal_list)
+    % Filter recording days based on selected workflows
+    rec_days = behaviour_data(animal_idx).recording_day;
+    valid_day_mask = ismember({rec_days.workflow}, target_workflow);
+    valid_rec_days = rec_days(valid_day_mask);
+    num_days = length(valid_rec_days);
+    
+    % Skip if no days match
+    if num_days == 0
+        fprintf('No matching days for animal %s\n', animal_list{animal_idx});
+        continue;
+    end
+    
+    % Check if both event fields exist
+    if ~isfield(valid_rec_days(1), cs_plus_field)
+        fprintf('Event field %s not found for animal %s\n', cs_plus_field, animal_list{animal_idx});
+        continue;
+    end
+    if ~isfield(valid_rec_days(1), cs_minus_field)
+        fprintf('Event field %s not found for animal %s\n', cs_minus_field, animal_list{animal_idx});
+        continue;
+    end
+    
+    % Get learning status for this animal
+    animal_learning_all_protocols = combined_sig_day_all_protocols{animal_idx};
+    animal_learning = animal_learning_all_protocols(valid_day_mask);
+    first_learning_day = find(animal_learning, 1, 'first');
+    
+    % Create event name for title
+    event_name = strrep(event_to_plot, '_', ' ');
+    event_name = regexprep(event_name, '(^.)', '${upper($1)}');
+    
+    figure('Position', [100, 100, 1200, 800]);
+    num_columns = 3;
+    num_rows = ceil(num_days / num_columns);
+    
+    for day_idx = 1:num_days
+        subplot(num_rows, num_columns, day_idx);
+        rec_day_struct = valid_rec_days(day_idx);
+        
+        % Get both CS+ and CS- traces
+        psth_cs_plus = rec_day_struct.(cs_plus_field);
+        psth_cs_minus = rec_day_struct.(cs_minus_field);
+        
+        % Plot CS+
+        plot(bin_centers, psth_cs_plus, 'Color', [0.2, 0.2, 0.8], 'LineWidth', 2);
+        hold on;
+        
+        % Plot CS-
+        plot(bin_centers, psth_cs_minus, 'Color', [0.8, 0.2, 0.2], 'LineWidth', 2);
+        
+        title([event_name, ' - ', rec_day_struct.day], 'Interpreter', 'none');
+        xlabel('Time (s)');
+        ylabel('Lick Rate (licks/s)');
+        xline(0, '--k', 'LabelHorizontalAlignment', 'left');
+        xlim([lick_detection_time_window(1), lick_detection_time_window(2)]);
+        
+        % Set ylim based on both traces
+        max_y = max([max(psth_cs_plus), max(psth_cs_minus)]);
+        ylim([0, max(1, max_y * 1.1)]);
+        
+        % Add legend
+        legend({'CS+', 'CS-'}, 'Location', 'northwest');
+        
+        % Mark first learning day with red border
+        if ~isempty(first_learning_day) && day_idx == first_learning_day
+            % Change axes outline color to red and make thicker
+            ax = gca;
+            ax.XColor = 'r';
+            ax.YColor = 'r';
+            ax.LineWidth = 3;
+            
+            % Optional: Add text marker
+            text(0.95, 0.95, 'Learning Day', 'Units', 'normalized', ...
+                 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', ...
+                 'Color', 'r', 'FontWeight', 'bold', 'FontSize', 10);
+        end
+        
+        hold off;
+    end
+    
+    sgtitle([event_name, ' PSTH - Animal ', animal_list{animal_idx}], 'FontSize', 16);
+    set(gcf, 'Color', 'w');
+end
+
 
 
 %% Plots MEAN pre-post PSTHs seperated by groups for CS+ and CS- and non-learners 
@@ -46,11 +143,11 @@ learning_index_animal = vertcat(combined_sig_day_all_protocols{:});
 
 mPFC_plus_grp = {'HA005','HA008','HA010','HA012'};
 mPFC_minus_grp = {'DS017','HA007','HA009','HA011','HA014','HA015'};
-non_learners_grp = {'AP030','AP031','AP032'};
+non_learners_grp = {'HA006','HA013','AP030','AP031','AP032'};
 
 all_ids = {behaviour_data.animal_id};
 
-target_workflow = {'visual_operant_lick_two_stim_right_move_big_stim'};
+target_workflow = {'visual_operant_lick_two_stim_right_move'};
  
 
 % Pre-allocate containers for THREE groups
@@ -65,8 +162,6 @@ non_rew_field = 'avg_psth_non_rewarded_stim_on';
 
 % rew_field= 'avg_psth_rewarded_stim_final_position';
 % non_rew_field= 'avg_psth_non_rewarded_stim_final_position';
-
-
 
 
 % Loop over animals
@@ -86,7 +181,7 @@ for ai = 1:numel(all_ids)
     
     if isempty(validDays)
         warning('Animal %s: no recording found, skipping', behaviour_data(ai).animal_id);
-        continue;
+        % continue;
     end
     
     sig_days_all = combined_sig_day_all_protocols{ai};
@@ -195,15 +290,15 @@ subplot(2,1,1); hold on;
 %          'DisplayName', 'mPFC- Pre',LineStyle='--');
 % end
 
-% % mPFC- Post
-% if ~isempty(mean_mPFC_minus_post_CS_plus)
-%     fill([t fliplr(t)], ...
-%          [mean_mPFC_minus_post_CS_plus + sem_mPFC_minus_post_CS_plus, ...
-%           fliplr(mean_mPFC_minus_post_CS_plus - sem_mPFC_minus_post_CS_plus)], ...
-%          cNonLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-%     plot(t, mean_mPFC_minus_post_CS_plus, 'Color', cNonLearner, 'LineWidth', 2.5, ...
-%          'DisplayName', 'mPFC- Post');
-% end
+% mPFC- Post
+if ~isempty(mean_mPFC_minus_post_CS_plus)
+    fill([t fliplr(t)], ...
+         [mean_mPFC_minus_post_CS_plus + sem_mPFC_minus_post_CS_plus, ...
+          fliplr(mean_mPFC_minus_post_CS_plus - sem_mPFC_minus_post_CS_plus)], ...
+         cNonLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+    plot(t, mean_mPFC_minus_post_CS_plus, 'Color', cNonLearner, 'LineWidth', 2.5, ...
+         'DisplayName', 'mPFC- Post');
+end
 
 
 % Non-learners Pre
@@ -267,16 +362,16 @@ end
 %          'DisplayName', 'mPFC- Pre',LineStyle='--');
 % end
 
-% % mPFC- Post
-% if ~isempty(mean_mPFC_minus_post_CS_minus)
-%     fill([t fliplr(t)], ...
-%          [mean_mPFC_minus_post_CS_minus + sem_mPFC_minus_post_CS_minus, ...
-%           fliplr(mean_mPFC_minus_post_CS_minus - sem_mPFC_minus_post_CS_minus)], ...
-%          cNonLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-%     plot(t, mean_mPFC_minus_post_CS_minus, 'Color', cNonLearner, 'LineWidth', 2.5, ...
-%          'DisplayName', 'mPFC- Post');
-% end
-% %
+% mPFC- Post
+if ~isempty(mean_mPFC_minus_post_CS_minus)
+    fill([t fliplr(t)], ...
+         [mean_mPFC_minus_post_CS_minus + sem_mPFC_minus_post_CS_minus, ...
+          fliplr(mean_mPFC_minus_post_CS_minus - sem_mPFC_minus_post_CS_minus)], ...
+         cNonLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+    plot(t, mean_mPFC_minus_post_CS_minus, 'Color', cNonLearner, 'LineWidth', 2.5, ...
+         'DisplayName', 'mPFC- Post');
+end
+%
 
 % Non-learners Pre
 if ~isempty(mean_non_learner_pre_CS_minus)
@@ -288,15 +383,15 @@ if ~isempty(mean_non_learner_pre_CS_minus)
          'DisplayName', 'Non-learners Pre',LineStyle='--');
 end
 
-% Non-learners Post
-if ~isempty(mean_non_learner_post_CS_minus)
-    fill([t fliplr(t)], ...
-         [mean_non_learner_post_CS_minus + sem_non_learner_post_CS_minus, ...
-          fliplr(mean_non_learner_post_CS_minus - sem_non_learner_post_CS_minus)], ...
-         [0.5 0.5 0.5], 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-    plot(t, mean_non_learner_post_CS_minus, 'Color', [0.5 0.5 0.5], 'LineWidth', 2.5, ...
-         'DisplayName', 'Non-learners Post');
-end
+% % Non-learners Post
+% if ~isempty(mean_non_learner_post_CS_minus)
+%     fill([t fliplr(t)], ...
+%          [mean_non_learner_post_CS_minus + sem_non_learner_post_CS_minus, ...
+%           fliplr(mean_non_learner_post_CS_minus - sem_non_learner_post_CS_minus)], ...
+%          [0.5 0.5 0.5], 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+%     plot(t, mean_non_learner_post_CS_minus, 'Color', [0.5 0.5 0.5], 'LineWidth', 2.5, ...
+%          'DisplayName', 'Non-learners Post');
+% end
 
 xline(0, 'k--', 'HandleVisibility', 'off');
 xlabel('Time (s)');
@@ -530,8 +625,10 @@ for ai = animals(:)'
         
         cs_plus_mask= behaviour_data(ai).recording_day(day_num).cs_labels;
         % Get static times and lick latencies
-        static_times = behaviour_data(ai).recording_day(day_num).all_static_times;
+        static_times = behaviour_data(ai).recording_day(day_num).all_static_times(cs_plus_mask==1);
         lick_lat = behaviour_data(ai).recording_day(day_num).cs_plus_latency_lick_to_move;
+
+        x= behaviour_data(ai).recording_day(day_num).right_stim_on_times;
         
         % Ensure matching trial counts
         if length(static_times) ~= length(lick_lat)
@@ -545,7 +642,7 @@ for ai = animals(:)'
     end
     
     % Remove invalid trials
-    valid = ~isnan(all_static_times) & ~isnan(all_lick_latencies);
+    valid = ~isnan(all_static_times) & ~isnan(all_lick_latencies) & (all_lick_latencies<=1);
     all_static_times = all_static_times(valid);
     all_lick_latencies = all_lick_latencies(valid);
     

@@ -40,6 +40,7 @@ workflow_cat = grp2idx(horzcat(workflow_animal{:}));
 learning_index_animal = vertcat(combined_sig_day_all_protocols{:});
 
 %% Plot individual animal CS+ and CS- overlaid PSTHs across all days for a given protocol
+
 animal_list = {behaviour_data.animal_id};
 target_workflow = {'visual_operant_lick_two_stim_right_move_big_stim'};
 

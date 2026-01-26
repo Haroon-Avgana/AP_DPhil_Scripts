@@ -12,61 +12,63 @@ wf_U= plab.wf.load_master_U;
 
 added_time = -0.5:0.03:1; % for passive
 
+% ROI masks
+mPFC_data = load('C:\Users\havgana\Desktop\DPhil\Coding Scripts\ROIs\mPFC_ROI.mat');
+left_mPFC_ROI_mask = mPFC_data.new_pfc_roi_mask;
+right_mPFC_ROI_mask = fliplr(left_mPFC_ROI_mask);
 
-%% Filter our big stim protocols
-% Provides an option to set whether to filter out post-big regular sized
-% static or to keep them just removing big stim days
+ViS_ROI_data = load("C:\Users\havgana\Desktop\DPhil\Coding Scripts\ROIs\right_ViS_mask.mat");
+left_ViS_ROI_mask = ViS_ROI_data.visual_cortex_mask;
+right_ViS_ROI_mask = fliplr(left_ViS_ROI_mask);
 
-% ----------------- CONFIG -----------------
-opts.protocol_list = { ...
-  'visual_operant_lick_two_stim_right_move', ...
-  'visual_operant_lick_two_stim_static', ...
-  'visual_operant_lick_two_stim_right_move_big_stim', ...
-  'visual_operant_lick_two_stim_static_big_stim', ...
-  'stim_wheel*' ...
-};
 
-opts.big_names = { ...
-  'visual_operant_lick_two_stim_right_move_big_stim', ...
-  'visual_operant_lick_two_stim_static_big_stim' ...
-};
+% set up two custom colors for learners and non-learners
+cmPFC_plus   = [0 0.6 0];   % dark green
+cmPFC_minus = [0.6 0 0.6]; % purple
 
-% protocols to drop AFTER the first big_stim, if drop_following=true
-opts.following_names = { 'visual_operant_lick_two_stim_static' };
-% opts.following_names = { 'stim_wheel*' }; % For HA014 for now
 
-opts.drop_following   = false;   % <--- true if to drop following ; false otherwise
-opts.error_on_unknown = true;   % error if a workflow isn't in protocol_list
+%% HA009 have two lcr_passive regular size stim recording missing- therefore, padding them (Make it a function for clearner implemetation)
 
-% ------------------------------------------
+% Get all the widefield data
+widefield_cat = cat(2, passive_data.widefield);
 
-animal_list = {behaviour_data.animal_id};
+% for V - create a V x T x all days variable - right stim
+right_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.right_stim_aligned_V}, 'UniformOutput', false); % average across trials
 
-for animal_idx = 1:numel(animal_list)
-    rd = behaviour_data(animal_idx).recording_day;
-    wf = passive_data(animal_idx).widefield;   % optional, if present
+% Find the size from first non-empty day
+non_empty_idx = find(~cellfun(@isempty, right_stim_v), 1, 'first');
 
-    [keptLocalIdx] = ha.helper_func.select_sessions_by_protocol(rd, opts);
+% Get V and T dimensions from non-empty example
+example_data = right_stim_all{non_empty_idx};
+n_V = size(example_data, 1);  % V dimension
+n_T = size(example_data, 2);  % T dimension
 
-    if isempty(keptLocalIdx)
-        fprintf('Animal %s: nothing kept (had %d sessions)\n', ...
-            animal_list{animal_idx}, numel(rd));
-        continue
-    end
-
-    % apply to both structures (keep them in sync)
-    behaviour_data(animal_idx).recording_day = rd(keptLocalIdx);
-    if numel(wf) == numel(rd)
-        passive_data(animal_idx).widefield = wf(keptLocalIdx);
+% Process each day: average across trials or pad with NaNs
+right_stim_v = cell(1, length(right_stim_all));
+for day = 1:length(right_stim_all)
+    if isempty(right_stim_all{day})
+        % Pad empty days with NaN array of correct size
+        right_stim_v{day} = nan(n_V, n_T);
     else
-        warning('Animal %s: widefield length %d != recording_day length %d. Skipping WF filter.', ...
-            animal_list{animal_idx}, numel(wf), numel(rd));
+        % Average across trials for non-empty days
+        right_stim_v{day} = mean(right_stim_all{day}, 3);
     end
-
-    fprintf('\nAnimal %s: kept %d/%d sessions', ...
-        animal_list{animal_idx}, numel(keptLocalIdx), numel(rd));
 end
 
+% Now concatenate - all days have consistent V x T dimensions
+right_stim_v_stacked_data = cat(3, right_stim_v{:});
+
+% Verify dimensions match
+fprintf('Widefield data: %d days\n', size(right_stim_v_stacked_data, 3));
+fprintf('Workflow index: %d days\n', length(workflow_cat));
+fprintf('Learning index: %d days\n', length(learning_index_animal));
+fprintf('Animal index: %d days\n', length(widefield_animal_idx));
+
+% Check which days are NaN (empty)
+empty_days = find(all(all(isnan(right_stim_v_stacked_data), 1), 2));
+if ~isempty(empty_days)
+    fprintf('Warning: Days with no data (padded with NaN): %s\n', mat2str(empty_days));
+end
 
 %% Set up variables
 
@@ -87,9 +89,9 @@ widefield_animal_idx = grp2idx(cell2mat(cellfun(@(animal,wf) repmat(animal,lengt
 % get all the widefield data
 widefield_cat= cat(2,passive_data.widefield); % concat
 
-% for V - create a V x T x all days variable - right stim
-right_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.right_stim_aligned_V}, 'UniformOutput', false); % average across trials
-right_stim_v_stacked_data = cat(3, right_stim_v{:});
+% % for V - create a V x T x all days variable - right stim
+% right_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.right_stim_aligned_V}, 'UniformOutput', false); % average across trials
+% right_stim_v_stacked_data = cat(3, right_stim_v{:});
 
 % for V - create a V x T x all days variable - center stim
 center_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.center_stim_aligned_V}, 'UniformOutput', false); % average across trials
@@ -144,22 +146,9 @@ for row_i = 1:n_rows
 end
 
 
-% ROI masks
-mPFC_data = load('C:\Users\havgana\Desktop\DPhil\Coding Scripts\ROIs\mPFC_ROI.mat');
-left_mPFC_ROI_mask = mPFC_data.new_pfc_roi_mask;
-right_mPFC_ROI_mask = fliplr(left_mPFC_ROI_mask);
-
-ViS_ROI_data = load("C:\Users\havgana\Desktop\DPhil\Coding Scripts\ROIs\right_ViS_mask.mat");
-left_ViS_ROI_mask = ViS_ROI_data.visual_cortex_mask;
-right_ViS_ROI_mask = fliplr(left_ViS_ROI_mask);
 
 
-% set up two custom colors for learners and non-learners
-cLearner    = [0 0.6 0];   % dark green
-cNonLearner = [0.6 0 0.6]; % purple
-
-
-%% Explorartory : Plot mPFC response between learners vs non-learners for right/centre stimulus
+%% Explorartory : Plot mPFC responses split mPFC+/mPFC- pre-post learning 
 
 % Is there an mPFC reponse difference between those who learned static and
 % those who didn't for right and centre stimulus?
@@ -178,8 +167,8 @@ animal_ids_all_days_stacked = vertcat(animal_ids_all_days{:});
 is_group_animal = ismember(animal_ids_all_days_stacked, group_animals);  % (n_days_all x 1)
 
 % pre post of workflow 3 (right move)
-pre = nanmean(right_stim_v_stacked_data(:,:,workflow_cat==1 & learning_index_animal==0 & is_group_animal==0 ),3);
-post = nanmean(right_stim_v_stacked_data(:,:,workflow_cat==1 & learning_index_animal==1 & is_group_animal==0),3);
+pre = nanmean(right_stim_v_stacked_data(:,:,workflow_cat==1 & learning_index_animal==0 & is_group_animal==1 ),3);
+post = nanmean(right_stim_v_stacked_data(:,:,workflow_cat==1 & learning_index_animal==1 & is_group_animal==1),3);
 
 baseline_start= [-0.1,0];
 baseline_mask= find(added_time >baseline_start(1) & added_time<baseline_start(2));
@@ -199,8 +188,8 @@ axis image;
 animal_list;
 
 % pre post of workflow 3 (right move)
-pre = nanmean(right_stim_kernel(:,:,workflow_cat==1 & learning_index_animal==0 & widefield_animal_idx==13),3);
-post = nanmean(right_stim_kernel(:,:,workflow_cat==1 & learning_index_animal==1 & widefield_animal_idx==13),3);
+pre = nanmean(right_stim_kernel(:,:,workflow_cat==1 & learning_index_animal==0 & widefield_animal_idx==2),3);
+post = nanmean(right_stim_kernel(:,:,workflow_cat==1 & learning_index_animal==1 & widefield_animal_idx==2),3);
 
 added_time_Kernel=  fliplr((-10:30)/30);
 
@@ -218,6 +207,323 @@ colormap(ap.colormap( ...
     'PWG'));
 axis image;
 
+
+%% Plot baseline corrected CCF average/max of mPFC activity (V) for each individual animal pre-post learning
+
+% Choose 'max' or 'mean' to plot
+statistic = 'max';
+
+% Define event and baseline time windows
+event_times = [0, 0.3];
+baseline_time_windows = [-0.1, 0];
+
+% Create logical masks for both
+event_time_window_mask = (added_time > event_times(1) & added_time < event_times(2));
+baseline_mask = (added_time >= baseline_time_windows(1) & added_time <= baseline_time_windows(2));
+
+% Define data to plot
+data_to_plot = right_stim_v_stacked_data;
+
+% Define protocol
+protocol_idx = 1;
+
+% Define colors
+cmPFC_plus = [0.3, 0.6, 0.3];      % Green for learners
+cNonlearner = [0.8, 0.3, 0.3];   % Red for non-learners
+
+% Get unique animals
+animals = unique(widefield_animal_idx);
+
+% Determine global color limit across all animals
+all_timewindow_data = [];
+
+for ai = animals(:)'
+    % Get pre and post learning data for this animal
+    pre_data = data_to_plot(:, :, workflow_cat == protocol_idx & learning_index_animal == 0 & widefield_animal_idx == ai);
+    post_data = data_to_plot(:, :, workflow_cat == protocol_idx & learning_index_animal == 1 & widefield_animal_idx == ai);
+    
+    if isempty(pre_data) && isempty(post_data), continue; end
+    
+    % Average across days
+    mean_pre = nanmean(pre_data, 3);
+    mean_post = nanmean(post_data, 3);
+    
+    % Baseline subtract
+    if ~isempty(pre_data)
+        baseline_sub_pre = mean_pre - nanmean(mean_pre(:, baseline_mask), 2);
+        timewindow_pre = plab.wf.svd2px(wf_U(:, :, 1:n_components), baseline_sub_pre(:, event_time_window_mask));
+        all_timewindow_data = [all_timewindow_data; timewindow_pre(:)];
+    end
+    
+    if ~isempty(post_data)
+        baseline_sub_post = mean_post - nanmean(mean_post(:, baseline_mask), 2);
+        timewindow_post = plab.wf.svd2px(wf_U(:, :, 1:n_components), baseline_sub_post(:, event_time_window_mask));
+        all_timewindow_data = [all_timewindow_data; timewindow_post(:)];
+    end
+end
+
+% Compute global color limit
+switch statistic
+    case 'max'
+        clim_val = 0.5 * max(abs(all_timewindow_data));
+    case 'mean'
+        clim_val = 0.5 * max(abs(all_timewindow_data));
+end
+
+% Loop through each animal and plot
+for ai = animals(:)'
+    % Check if this animal is a learner or non-learner
+    animal_days = widefield_animal_idx == ai;
+    is_learner = ~is_group_animal(find(animal_days, 1, 'first')); % Get learner status
+    
+    % Set color based on group
+    if is_learner
+        animal_color = cmPFC_plus;
+        group_label = 'mPFC+';
+    else
+        animal_color = cNonlearner;
+        group_label = 'mPFC-';
+    end
+    
+    % Get pre and post learning data for this animal
+    pre_mask = workflow_cat == protocol_idx & learning_index_animal == 0 & widefield_animal_idx == ai;
+    post_mask = workflow_cat == protocol_idx & learning_index_animal == 1 & widefield_animal_idx == ai;
+    
+    pre_data = data_to_plot(:, :, pre_mask);
+    post_data = data_to_plot(:, :, post_mask);
+    
+    % Skip if no data
+    if isempty(pre_data) && isempty(post_data)
+        fprintf('No data for animal %d\n', ai);
+        continue;
+    end
+    
+    % Average across days
+    mean_pre = nanmean(pre_data, 3);
+    mean_post = nanmean(post_data, 3);
+    
+    % Baseline subtract
+    baseline_sub_pre = mean_pre - nanmean(mean_pre(:, baseline_mask), 2);
+    baseline_sub_post = mean_post - nanmean(mean_post(:, baseline_mask), 2);
+    
+    % Get specific time window
+    timewindow_pre = plab.wf.svd2px(wf_U(:, :, 1:n_components), baseline_sub_pre(:, event_time_window_mask));
+    timewindow_post = plab.wf.svd2px(wf_U(:, :, 1:n_components), baseline_sub_post(:, event_time_window_mask));
+    
+    % Compute images
+    switch statistic
+        case 'max'
+            img_pre = max(timewindow_pre, [], 3);
+            img_post = max(timewindow_post, [], 3);
+        case 'mean'
+            img_pre = mean(timewindow_pre, 3);
+            img_post = mean(timewindow_post, 3);
+    end
+    
+    % Create figure with subplots
+    figure('Position', [100, 100, 1200, 500]);
+    
+    % Pre-learning
+    subplot(1, 2, 1);
+    imagesc(img_pre);
+    axis image off;
+    colormap(ap.colormap('PWG'));
+    clim([-clim_val, clim_val]);
+    title(sprintf('Animal %d Pre-Learning - %s', ai, group_label), 'Color', animal_color, 'FontWeight', 'bold');
+    ap.wf_draw('ccf');
+    
+    % Post-learning
+    subplot(1, 2, 2);
+    imagesc(img_post);
+    axis image off;
+    colormap(ap.colormap('PWG'));
+    clim([-clim_val, clim_val]);
+    title(sprintf('Animal %d Post-Learning - %s', ai, group_label), 'Color', animal_color, 'FontWeight', 'bold');
+    ap.wf_draw('ccf');
+    
+    % Overall figure title
+    sgtitle(sprintf('Animal %d: %s (%s)', ai, statistic, group_label), 'FontSize', 14, 'FontWeight', 'bold');
+end
+
+%% Plot mPFC ROI of mPFC+ and mPFC- groups with individual animal lines and mean
+
+% Define which ROI to plot (change as needed)
+ROI_trace = left_mPFC_ROI_trace; % or left_mPFC_ROI_trace, right_ViS_ROI_trace, etc.
+ROI_name = 'left mPFC';
+
+% Define protocol
+protocol_idx = 1;
+
+% Get unique animals
+animals = unique(widefield_animal_idx);
+
+% Define maximum days before/after learning to include
+max_days_before = 10;
+max_days_after = 10;
+
+% Storage for aligned data
+learner_data = cell(length(animals), 1);
+nonlearner_data = cell(length(animals), 1);
+learner_counter = 0;
+nonlearner_counter = 0;
+
+% Align each animal's data to their learning day
+for ai = animals(:)'
+    % Get days for this animal in the protocol
+    animal_mask = (widefield_animal_idx == ai) & (workflow_cat == protocol_idx);
+    animal_days = find(animal_mask);
+    
+    if isempty(animal_days), continue; end
+    
+    % Find learning day for this animal
+    learning_days_local = learning_index_animal(animal_days);
+    first_learning_idx = find(learning_days_local == 1, 1, 'first');
+    
+    if isempty(first_learning_idx)
+        % n_days = length(animal_days);
+        % first_learning_idx=n_days+1; % define all days as pre
+        continue;
+    end
+    
+    % Create relative day indices (0 = learning day)
+    n_days = length(animal_days);
+    relative_days = (1:n_days) - first_learning_idx;
+    
+    % Get ROI traces for this animal
+    animal_traces = ROI_trace(animal_days, :); % n_days × T
+    
+    % Store aligned data with relative day indices
+    aligned_animal_data = struct();
+    aligned_animal_data.relative_days = relative_days;
+    aligned_animal_data.traces = animal_traces;
+    aligned_animal_data.animal_id = ai;
+    
+    % Determine if learner or non-learner
+    is_learner = ~is_group_animal(animal_days(1));
+    
+    if is_learner
+        learner_counter = learner_counter + 1;
+        learner_data{learner_counter} = aligned_animal_data;
+    else
+        nonlearner_counter = nonlearner_counter + 1;
+        nonlearner_data{nonlearner_counter} = aligned_animal_data;
+    end
+end
+
+% Trim storage
+learner_data = learner_data(1:learner_counter);
+nonlearner_data = nonlearner_data(1:nonlearner_counter);
+
+
+% define response window
+response_window = t_for_plot >= 0 & t_for_plot <= 0.3;
+
+% Process learners
+learner_aligned_days = -max_days_before:max_days_after;
+learner_aligned_activity = nan(length(learner_data), length(learner_aligned_days));
+
+for i = 1:length(learner_data)
+    animal_rel_days = learner_data{i}.relative_days;
+    animal_activity = ha.helper_func.compute_activity(learner_data{i}.traces, response_window);
+    
+    % Map to aligned day array
+    for d = 1:length(animal_rel_days)
+        rel_day = animal_rel_days(d);
+        aligned_idx = find(learner_aligned_days == rel_day, 1);
+        if ~isempty(aligned_idx)
+            learner_aligned_activity(i, aligned_idx) = animal_activity(d);
+        end
+    end
+end
+
+% Process non-learners
+nonlearner_aligned_days = -max_days_before:max_days_after;
+nonlearner_aligned_activity = nan(length(nonlearner_data), length(nonlearner_aligned_days));
+
+for i = 1:length(nonlearner_data)
+    animal_rel_days = nonlearner_data{i}.relative_days;
+    animal_activity = ha.helper_func.compute_activity(nonlearner_data{i}.traces, response_window);
+    
+    % Map to aligned day array
+    for d = 1:length(animal_rel_days)
+        rel_day = animal_rel_days(d);
+        aligned_idx = find(nonlearner_aligned_days == rel_day, 1);
+        if ~isempty(aligned_idx)
+            nonlearner_aligned_activity(i, aligned_idx) = animal_activity(d);
+        end
+    end
+end
+
+% Plot Learners (mPFC+)
+figure('Position', [100, 100, 1000, 500]);
+
+subplot(1, 2, 1);
+hold on;
+
+% Plot individual animals
+for i = 1:size(learner_aligned_activity, 1)
+    plot(learner_aligned_days, learner_aligned_activity(i, :), '-', ...
+         'Color', [cmPFC_plus, 0.3], 'LineWidth', 1);
+end
+
+% Compute and plot group mean ± SEM
+group_mean = nanmean(learner_aligned_activity, 1);
+group_sem = nanstd(learner_aligned_activity, 0, 1) / sqrt(sum(~isnan(learner_aligned_activity), 1));
+
+% Plot mean
+plot(learner_aligned_days, group_mean, '-', 'Color', cmPFC_plus, 'LineWidth', 3);
+
+% Plot SEM shading
+fill([learner_aligned_days, fliplr(learner_aligned_days)], ...
+     [group_mean + group_sem, fliplr(group_mean - group_sem)], ...
+     cmPFC_plus, 'FaceAlpha', 0.3, 'EdgeColor', 'none');
+
+% Mark learning day
+xline(0, '--k', 'Learning Day', 'LineWidth', 2, 'FontSize', 10, 'FontWeight', 'bold');
+
+xlabel('Days Relative to Learning', 'FontSize', 12, 'FontWeight', 'bold');
+ylabel('Peak Activity', 'FontSize', 12, 'FontWeight', 'bold');
+title(sprintf('mPFC+ Animals (n=%d)', length(learner_data)), 'FontSize', 13, 'FontWeight', 'bold');
+xlim([-max_days_before, max_days_after]);
+set(gca, 'FontSize', 11);
+grid on;
+hold off;
+
+% Plot Non-Learners (mPFC-)
+subplot(1, 2, 2);
+hold on;
+
+% Plot individual animals
+for i = 1:size(nonlearner_aligned_activity, 1)
+    plot(nonlearner_aligned_days, nonlearner_aligned_activity(i, :), '-', ...
+         'Color', [cmPFC_minus, 0.3], 'LineWidth', 1);
+end
+
+% Compute and plot group mean ± SEM
+group_mean = nanmean(nonlearner_aligned_activity, 1);
+group_sem = nanstd(nonlearner_aligned_activity, 0, 1) / sqrt(sum(~isnan(nonlearner_aligned_activity), 1));
+
+% Plot mean
+plot(nonlearner_aligned_days, group_mean, '-', 'Color', cmPFC_minus, 'LineWidth', 3);
+
+% Plot SEM shading
+fill([nonlearner_aligned_days, fliplr(nonlearner_aligned_days)], ...
+     [group_mean + group_sem, fliplr(group_mean - group_sem)], ...
+     cmPFC_minus, 'FaceAlpha', 0.3, 'EdgeColor', 'none');
+
+% Mark learning day
+xline(0, '--k', 'Learning Day', 'LineWidth', 2, 'FontSize', 10, 'FontWeight', 'bold');
+
+xlabel('Days Relative to Learning', 'FontSize', 12, 'FontWeight', 'bold');
+ylabel('Peak Activity', 'FontSize', 12, 'FontWeight', 'bold');
+title(sprintf('mPFC- Animals (n=%d)', length(nonlearner_data)), 'FontSize', 13, 'FontWeight', 'bold');
+xlim([-max_days_before, max_days_after]);
+set(gca, 'FontSize', 11);
+grid on;
+hold off;
+
+sgtitle(sprintf('%s V Activity Aligned to Learning Day', ROI_name), ...
+        'FontSize', 14, 'FontWeight', 'bold');
 
 %% Plot baseline corrected CCF average/max mPFC activity (V) comparing learners vs non-learners
 
@@ -522,10 +828,10 @@ for ai = animals(:)'
     % ——— 5) plot the time‐courses ———
     figure('Name',sprintf('Animal %s pre/post',animal_list{ai}),'Color','w');
     hold on;
-    plot(t_for_plot, R_pre,'color',cLearner,'LineWidth',2,'LineStyle','--');
-    plot(t_for_plot, R_post, 'color',cLearner,'LineWidth',2);
-    plot(t_for_plot, L_pre,  'color',cNonLearner,'LineWidth',2,'LineStyle','--');
-    plot(t_for_plot, L_post, 'color',cNonLearner,'LineWidth',2);
+    plot(t_for_plot, R_pre,'color',cmPFC_plus,'LineWidth',2,'LineStyle','--');
+    plot(t_for_plot, R_post, 'color',cmPFC_plus,'LineWidth',2);
+    plot(t_for_plot, L_pre,  'color',cmPFC_minus,'LineWidth',2,'LineStyle','--');
+    plot(t_for_plot, L_post, 'color',cmPFC_minus,'LineWidth',2);
     xline(0,'k--','LineWidth',1.5);      % if t=0 is event
     xlabel('Time (s)');
     ylabel('Mean mPFC activity (a.u.)');
@@ -612,25 +918,25 @@ subplot(2,1,1); hold on;
 % learner pre
 fill([t_for_plot, fliplr(t_for_plot)], ...
     [grpR_pre_L+semR_pre_L, fliplr(grpR_pre_L-semR_pre_L)], ...
-    cLearner,'FaceAlpha',0.2,'EdgeColor','none');
+    cmPFC_plus,'FaceAlpha',0.2,'EdgeColor','none');
 % learner post
 fill([t_for_plot, fliplr(t_for_plot)], ...
     [grpR_post_L+semR_post_L, fliplr(grpR_post_L-semR_post_L)], ...
-    cLearner,'FaceAlpha',0.1,'EdgeColor','none');
+    cmPFC_plus,'FaceAlpha',0.1,'EdgeColor','none');
 % nonlearner pre
 fill([t_for_plot, fliplr(t_for_plot)], ...
     [grpR_pre_N+semR_pre_N, fliplr(grpR_pre_N-semR_pre_N)], ...
-    cNonLearner,'FaceAlpha',0.2,'EdgeColor','none');
+    cmPFC_minus,'FaceAlpha',0.2,'EdgeColor','none');
 % nonlearner post
 fill([t_for_plot, fliplr(t_for_plot)], ...
     [grpR_post_N+semR_post_N, fliplr(grpR_post_N-semR_post_N)], ...
-    cNonLearner,'FaceAlpha',0.1,'EdgeColor','none');
+    cmPFC_minus,'FaceAlpha',0.1,'EdgeColor','none');
 
 % now lines on top
-plot(t_for_plot, grpR_pre_L,  'color',cLearner,'LineWidth',2,LineStyle='--');
-plot(t_for_plot, grpR_post_L, 'color',cLearner,'LineWidth',2,LineStyle='-');
-plot(t_for_plot, grpR_pre_N,  'color',cNonLearner,'LineWidth',2,LineStyle='--');
-plot(t_for_plot, grpR_post_N, 'color',cNonLearner,'LineWidth',2,LineStyle='-');
+plot(t_for_plot, grpR_pre_L,  'color',cmPFC_plus,'LineWidth',2,LineStyle='--');
+plot(t_for_plot, grpR_post_L, 'color',cmPFC_plus,'LineWidth',2,LineStyle='-');
+plot(t_for_plot, grpR_pre_N,  'color',cmPFC_minus,'LineWidth',2,LineStyle='--');
+plot(t_for_plot, grpR_post_N, 'color',cmPFC_minus,'LineWidth',2,LineStyle='-');
 
 xline(ax1,0,'k--','LineWidth',1.5);
 title(ax1,'Right Visual Cortex');
@@ -645,21 +951,21 @@ ax2 = subplot(2,1,2); hold(ax2,'on');
 subplot(2,1,2); hold on;
 fill([t_for_plot, fliplr(t_for_plot)], ...
     [grpL_pre_L+semL_pre_L, fliplr(grpL_pre_L-semL_pre_L)], ...
-    cLearner,'FaceAlpha',0.2,'EdgeColor','none');
+    cmPFC_plus,'FaceAlpha',0.2,'EdgeColor','none');
 fill([t_for_plot, fliplr(t_for_plot)], ...
     [grpL_post_L+semL_post_L, fliplr(grpL_post_L-semL_post_L)], ...
-    cLearner,'FaceAlpha',0.1,'EdgeColor','none');
+    cmPFC_plus,'FaceAlpha',0.1,'EdgeColor','none');
 fill([t_for_plot, fliplr(t_for_plot)], ...
     [grpL_pre_N+semL_pre_N, fliplr(grpL_pre_N-semL_pre_N)], ...
-    cNonLearner,'FaceAlpha',0.2,'EdgeColor','none');
+    cmPFC_minus,'FaceAlpha',0.2,'EdgeColor','none');
 fill([t_for_plot, fliplr(t_for_plot)], ...
     [grpL_post_N+semL_post_N, fliplr(grpL_post_N-semL_post_N)], ...
-    cNonLearner,'FaceAlpha',0.1,'EdgeColor','none');
+    cmPFC_minus,'FaceAlpha',0.1,'EdgeColor','none');
 
-plot(t_for_plot, grpL_pre_L,  'color',cLearner,'LineWidth',2, LineStyle='--');
-plot(t_for_plot, grpL_post_L, 'color',cLearner,'LineWidth',2, LineStyle='-');
-plot(t_for_plot, grpL_pre_N, 'color',cNonLearner,'LineWidth',2, LineStyle='--');
-plot(t_for_plot, grpL_post_N, 'color',cNonLearner,'LineWidth',2, LineStyle='-');
+plot(t_for_plot, grpL_pre_L,  'color',cmPFC_plus,'LineWidth',2, LineStyle='--');
+plot(t_for_plot, grpL_post_L, 'color',cmPFC_plus,'LineWidth',2, LineStyle='-');
+plot(t_for_plot, grpL_pre_N, 'color',cmPFC_minus,'LineWidth',2, LineStyle='--');
+plot(t_for_plot, grpL_post_N, 'color',cmPFC_minus,'LineWidth',2, LineStyle='-');
 
 xline(ax2,0,'k--','LineWidth',1.5);
 title(ax2,'Left Visual Cortex');
@@ -865,21 +1171,21 @@ figure; hold on;
 learner_days = learner_groups_filtered(:, 1);
 fill([learner_days; flipud(learner_days)], ...
      [learner_avg_filtered + learner_sem_filtered; flipud(learner_avg_filtered - learner_sem_filtered)], ...
-     cLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+     cmPFC_plus, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
 
 % Plot learner mean line
 plot(learner_days, learner_avg_filtered, '-o', ...
-    'LineWidth', 2, 'DisplayName', 'Learners', 'Color', cLearner, 'MarkerFaceColor', cLearner);
+    'LineWidth', 2, 'DisplayName', 'Learners', 'Color', cmPFC_plus, 'MarkerFaceColor', cmPFC_plus);
 
 % Plot non-learner SEM shading
 non_learner_days = non_learner_groups_filtered(:, 1);
 fill([non_learner_days; flipud(non_learner_days)], ...
      [non_learner_avg_filtered + non_learner_sem_filtered; flipud(non_learner_avg_filtered - non_learner_sem_filtered)], ...
-     cNonLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+     cmPFC_minus, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility', 'off');
 
 % Plot non-learner mean line
 plot(non_learner_days, non_learner_avg_filtered, '-o', ...
-    'LineWidth', 2, 'DisplayName', 'Non-Learners', 'Color', cNonLearner, 'MarkerFaceColor', cNonLearner);
+    'LineWidth', 2, 'DisplayName', 'Non-Learners', 'Color', cmPFC_minus, 'MarkerFaceColor', cmPFC_minus);
 
 xline(0, 'k--', 'LineWidth', 1.5, 'DisplayName', 'Learning Day');
 xlabel('Days Relative to Learning');
@@ -1086,7 +1392,7 @@ for i = 1:length(learner_data)
     
     if any(valid_idx)
         plot(animal_rel_days(valid_idx), animal_activity(valid_idx), '-', ...
-            'Color', [cLearner 0.3], 'LineWidth', 0.5, 'HandleVisibility', 'off');
+            'Color', [cmPFC_plus 0.3], 'LineWidth', 0.5, 'HandleVisibility', 'off');
     end
 end
 
@@ -1100,30 +1406,30 @@ for i = 1:length(non_learner_data)
     
     if any(valid_idx)
         plot(animal_rel_days(valid_idx), animal_activity(valid_idx), '-', ...
-            'Color', [cNonLearner 0.3], 'LineWidth', 0.5, 'HandleVisibility', 'off');
+            'Color', [cmPFC_minus 0.3], 'LineWidth', 0.5, 'HandleVisibility', 'off');
     end
 end
 
 % Plot learner group average (thick blue line)
 if ~isempty(learner_valid_days)
     plot(learner_valid_days, learner_valid_avg, '-', ...
-        'Color', cLearner, 'LineWidth', 3, 'DisplayName', 'Learner Average');
+        'Color', cmPFC_plus, 'LineWidth', 3, 'DisplayName', 'Learner Average');
     
     % Add SEM shading
     fill([learner_valid_days fliplr(learner_valid_days)], ...
         [learner_valid_avg+learner_valid_sem, fliplr(learner_valid_avg-learner_valid_sem)], ...
-        cLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility','off');
+        cmPFC_plus, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility','off');
 end
 
 % Plot non-learner group average (thick orange line)
 if ~isempty(non_learner_valid_days)
     plot(non_learner_valid_days, non_learner_valid_avg, '-', ...
-        'Color', cNonLearner, 'LineWidth', 3, 'DisplayName', 'Non-Learner Average');
+        'Color', cmPFC_minus, 'LineWidth', 3, 'DisplayName', 'Non-Learner Average');
     
     % Add SEM shading
     fill([non_learner_valid_days fliplr(non_learner_valid_days)], ...
         [non_learner_valid_avg+non_learner_valid_sem, fliplr(non_learner_valid_avg-non_learner_valid_sem)], ...
-        cNonLearner, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility','off');
+        cmPFC_minus, 'FaceAlpha', 0.2, 'EdgeColor', 'none', 'HandleVisibility','off');
 end
 
 xline(0, 'k--', 'LineWidth', 2, 'DisplayName', 'Learning Day');
@@ -1158,7 +1464,7 @@ left_mPFC_ROI_trace  = permute( ...
 
 
 protocols = unique(workflow_cat(:))';          % plot segments in this order
-groupColor = {cLearner, cNonLearner};          % 0->Learners, 1->Non-learners
+groupColor = {cmPFC_plus, cmPFC_minus};          % 0->Learners, 1->Non-learners
 labels     = {'Learners','Non-learners'};
 
 % ---------- per-PROTOCOL stats (mean ± SEM vs relative day for each group) ----------
@@ -1473,11 +1779,11 @@ set(gca, 'FontSize', 12, 'LineWidth', 1.5, 'Box', 'on');
 subplot(1, 2, 2);
 hold on;
 % Plot non-learners
-scatter(nonlearner_left, nonlearner_right, 150, cNonLearner, 'filled', ...
+scatter(nonlearner_left, nonlearner_right, 150, cmPFC_minus, 'filled', ...
     'MarkerEdgeColor', 'k', 'LineWidth', 1.5, 'MarkerFaceAlpha', 0.7, ...
     'DisplayName', sprintf('Non-learners (n=%d)', length(nonlearner_left)));
 % Plot learners
-scatter(learner_left, learner_right, 150, cLearner, 'filled', ...
+scatter(learner_left, learner_right, 150, cmPFC_plus, 'filled', ...
     'MarkerEdgeColor', 'k', 'LineWidth', 1.5, 'MarkerFaceAlpha', 0.7, ...
     'DisplayName', sprintf('Learners (n=%d)', length(learner_left)));
 % Add unity line
@@ -1545,7 +1851,7 @@ right_mPFC_ROI_trace = right_mPFC_ROI_trace - right_baseline_mean;
 left_mPFC_ROI_trace = left_mPFC_ROI_trace - left_baseline_mean;
 
 protocols = unique(workflow_cat(:))';          % plot segments in this order
-groupColor = {cLearner, cNonLearner};          % 0->Learners, 1->Non-learners
+groupColor = {cmPFC_plus, cmPFC_minus};          % 0->Learners, 1->Non-learners
 labels     = {'Learners','Non-learners'};
 
 % Minimum number of animals required per day
@@ -1876,3 +2182,60 @@ left_stim_kernel= cat(3,widefield_cat.left_stim_aligned_kernel);
 
 animal_list= {behaviour_data.animal_id}; % get animal list
 unique_workflow_labels= unique(horzcat(workflow_animal{:}),"stable"); % unique workflows by order
+
+
+%% Archived
+
+%% Filter our big stim protocols
+% Provides an option to set whether to filter out post-big regular sized
+% static or to keep them just removing big stim days
+
+% ----------------- CONFIG -----------------
+opts.protocol_list = { ...
+  'visual_operant_lick_two_stim_right_move', ...
+  'visual_operant_lick_two_stim_static', ...
+  'visual_operant_lick_two_stim_right_move_big_stim', ...
+  'visual_operant_lick_two_stim_static_big_stim', ...
+  'stim_wheel*' ...
+};
+
+opts.big_names = { ...
+  'visual_operant_lick_two_stim_right_move_big_stim', ...
+  'visual_operant_lick_two_stim_static_big_stim' ...
+};
+
+% protocols to drop AFTER the first big_stim, if drop_following=true
+opts.following_names = { 'visual_operant_lick_two_stim_static' };
+% opts.following_names = { 'stim_wheel*' }; % For HA014 for now
+
+opts.drop_following   = false;   % <--- true if to drop following ; false otherwise
+opts.error_on_unknown = true;   % error if a workflow isn't in protocol_list
+
+% ------------------------------------------
+
+animal_list = {behaviour_data.animal_id};
+
+for animal_idx = 1:numel(animal_list)
+    rd = behaviour_data(animal_idx).recording_day;
+    wf = passive_data(animal_idx).widefield;   % optional, if present
+
+    [keptLocalIdx] = ha.helper_func.select_sessions_by_protocol(rd, opts);
+
+    if isempty(keptLocalIdx)
+        fprintf('Animal %s: nothing kept (had %d sessions)\n', ...
+            animal_list{animal_idx}, numel(rd));
+        continue
+    end
+
+    % apply to both structures (keep them in sync)
+    behaviour_data(animal_idx).recording_day = rd(keptLocalIdx);
+    if numel(wf) == numel(rd)
+        passive_data(animal_idx).widefield = wf(keptLocalIdx);
+    else
+        warning('Animal %s: widefield length %d != recording_day length %d. Skipping WF filter.', ...
+            animal_list{animal_idx}, numel(wf), numel(rd));
+    end
+
+    fprintf('\nAnimal %s: kept %d/%d sessions', ...
+        animal_list{animal_idx}, numel(keptLocalIdx), numel(rd));
+end

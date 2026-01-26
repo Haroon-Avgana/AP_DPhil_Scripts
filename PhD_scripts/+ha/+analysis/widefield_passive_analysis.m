@@ -26,54 +26,32 @@ right_ViS_ROI_mask = fliplr(left_ViS_ROI_mask);
 cmPFC_plus   = [0 0.6 0];   % dark green
 cmPFC_minus = [0.6 0 0.6]; % purple
 
-
-%% HA009 have two lcr_passive regular size stim recording missing- therefore, padding them (Make it a function for clearner implemetation)
+%% Given that HA009 have two recordings in which lcr_passive reguglar size is missing, it requires some padding
 
 % Get all the widefield data
 widefield_cat = cat(2, passive_data.widefield);
 
-% for V - create a V x T x all days variable - right stim
-right_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.right_stim_aligned_V}, 'UniformOutput', false); % average across trials
+% Extract and pad different variables
 
-% Find the size from first non-empty day
-non_empty_idx = find(~cellfun(@isempty, right_stim_v), 1, 'first');
+right_stim_v_stacked_data = ha.helper_func.pad_widefield_variable(widefield_cat, 'right_stim_aligned_V');
+left_stim_v_stacked_data = ha.helper_func.pad_widefield_variable(widefield_cat, 'left_stim_aligned_V');
+center_stim_v_stacked_data = ha.helper_func.pad_widefield_variable(widefield_cat, 'center_stim_aligned_V', false); % silent mode
 
-% Get V and T dimensions from non-empty example
-example_data = right_stim_all{non_empty_idx};
-n_V = size(example_data, 1);  % V dimension
-n_T = size(example_data, 2);  % T dimension
-
-% Process each day: average across trials or pad with NaNs
-right_stim_v = cell(1, length(right_stim_all));
-for day = 1:length(right_stim_all)
-    if isempty(right_stim_all{day})
-        % Pad empty days with NaN array of correct size
-        right_stim_v{day} = nan(n_V, n_T);
-    else
-        % Average across trials for non-empty days
-        right_stim_v{day} = mean(right_stim_all{day}, 3);
-    end
-end
-
-% Now concatenate - all days have consistent V x T dimensions
-right_stim_v_stacked_data = cat(3, right_stim_v{:});
+right_stim_kernel = ha.helper_func.pad_widefield_variable(widefield_cat, 'right_stim_aligned_kernel');
+left_stim_kernel = ha.helper_func.pad_widefield_variable(widefield_cat, 'left_stim_aligned_kernel');
+center_stim_kernel = ha.helper_func.pad_widefield_variable(widefield_cat, 'center_stim_aligned_kernel')
 
 % Verify dimensions match
-fprintf('Widefield data: %d days\n', size(right_stim_v_stacked_data, 3));
-fprintf('Workflow index: %d days\n', length(workflow_cat));
+fprintf('\nWorkflow index: %d days\n', length(workflow_cat));
 fprintf('Learning index: %d days\n', length(learning_index_animal));
 fprintf('Animal index: %d days\n', length(widefield_animal_idx));
 
-% Check which days are NaN (empty)
-empty_days = find(all(all(isnan(right_stim_v_stacked_data), 1), 2));
-if ~isempty(empty_days)
-    fprintf('Warning: Days with no data (padded with NaN): %s\n', mat2str(empty_days));
-end
 
 %% Set up variables
 
 % only using n components
 n_components=200;
+n_components_kernel= 100;
 
 % make protocol index (n all days x workflow number ordered)
 workflow_animal = cellfun(@(x) {x.workflow},{behaviour_data.recording_day},'uni',false);
@@ -86,20 +64,6 @@ learning_index_animal = vertcat(combined_sig_day_all_protocols{:});
 widefield_animal_idx = grp2idx(cell2mat(cellfun(@(animal,wf) repmat(animal,length(wf),1), ...
     {behaviour_data.animal_id},{passive_data.widefield},'uni',false)'));
 
-% get all the widefield data
-widefield_cat= cat(2,passive_data.widefield); % concat
-
-% % for V - create a V x T x all days variable - right stim
-% right_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.right_stim_aligned_V}, 'UniformOutput', false); % average across trials
-% right_stim_v_stacked_data = cat(3, right_stim_v{:});
-
-% for V - create a V x T x all days variable - center stim
-center_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.center_stim_aligned_V}, 'UniformOutput', false); % average across trials
-center_stim_v_stacked_data = cat(3, center_stim_v{:});
-
-% for V - create a V x T x all days variable - left stim
-left_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.left_stim_aligned_V}, 'UniformOutput', false); % average across trials
-left_stim_v_stacked_data = cat(3, left_stim_v{:});
 
 
 % For kernels
@@ -122,29 +86,42 @@ left_stim_kernel= cat(3,widefield_cat.left_stim_aligned_kernel);
 animal_list= {behaviour_data.animal_id}; % get animal list
 unique_workflow_labels= unique(horzcat(workflow_animal{:}),"stable"); % unique workflows by order
 
-% Your grouping variable
-n_rows = size(right_stim_V_learn_grp, 1);
-labels = cell(n_rows, 1);
 
-for row_i = 1:n_rows
-    animal_idx = right_stim_V_learn_grp(row_i, 1);
-    workflow_idx = right_stim_V_learn_grp(row_i, 2);
-    prepost = right_stim_V_learn_grp(row_i, 3);
+%% Plot line variables setup
 
-    % Convert indices to meaningful names
-    animal_id = animal_list{animal_idx};
-    workflow_name = unique_workflow_labels{workflow_idx};
+% Define the time window in seconds (0 to 200ms)
+start_time = -0.5; % 0s (0ms)
+end_time = 0.5; % 0.2s (200ms)
 
-    if prepost == 0
-        learn_status = 'Pre';
-    else
-        learn_status = 'Post';
-    end
+% data to index:  V×T×Ndays_total
+aligned_all = right_stim_kernel;
 
-    % Build label string
-    labels{row_i} = sprintf('%s | %s | %s', animal_id, workflow_name, learn_status);
-end
+% define the added time 
+added_time_V= added_time;
+added_time_Kernel= fliplr((-10:30)/30);
 
+% Find the corresponding indices in added_time for the time window
+event_time_window_mask = find(added_time_Kernel >= start_time & added_time_Kernel <= end_time);
+
+% % 1×T win vector in seconds
+t_for_plot = added_time_Kernel(event_time_window_mask);
+
+
+right_mPFC_ROI_trace = permute( ...
+    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,event_time_window_mask,:),[],[], right_mPFC_ROI_mask), ...
+    [3,2,1] );   % gives Ndays_total × T
+left_mPFC_ROI_trace = permute( ...
+    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,event_time_window_mask,:),[],[], left_mPFC_ROI_mask), ...
+    [3,2,1] );   % same dims
+
+% For visual cortex
+right_ViS_ROI_trace = permute( ...
+    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,event_time_window_mask,:),[],[], right_ViS_ROI_mask), ...
+    [3,2,1] );   % gives Ndays_total × T
+
+left_ViS_ROI_trace = permute( ...
+    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,event_time_window_mask,:),[],[], left_ViS_ROI_mask), ...
+    [3,2,1] );   % gives Ndays_total × T
 
 
 
@@ -167,8 +144,8 @@ animal_ids_all_days_stacked = vertcat(animal_ids_all_days{:});
 is_group_animal = ismember(animal_ids_all_days_stacked, group_animals);  % (n_days_all x 1)
 
 % pre post of workflow 3 (right move)
-pre = nanmean(right_stim_v_stacked_data(:,:,workflow_cat==1 & learning_index_animal==0 & is_group_animal==1 ),3);
-post = nanmean(right_stim_v_stacked_data(:,:,workflow_cat==1 & learning_index_animal==1 & is_group_animal==1),3);
+pre = nanmean(center_stim_v_stacked_data(:,:,workflow_cat==1 & learning_index_animal==0 & is_group_animal==0 ),3);
+post = nanmean(center_stim_v_stacked_data(:,:,workflow_cat==1 & learning_index_animal==1 & is_group_animal==0),3);
 
 baseline_start= [-0.1,0];
 baseline_mask= find(added_time >baseline_start(1) & added_time<baseline_start(2));
@@ -222,7 +199,7 @@ event_time_window_mask = (added_time > event_times(1) & added_time < event_times
 baseline_mask = (added_time >= baseline_time_windows(1) & added_time <= baseline_time_windows(2));
 
 % Define data to plot
-data_to_plot = right_stim_v_stacked_data;
+data_to_plot = center_stim_kernel;
 
 % Define protocol
 protocol_idx = 1;
@@ -266,6 +243,143 @@ end
 switch statistic
     case 'max'
         clim_val = 0.5 * max(abs(all_timewindow_data));
+    case 'mean'
+        clim_val = 0.5 * max(abs(all_timewindow_data));
+end
+
+% Loop through each animal and plot
+for ai = animals(:)'
+    % Check if this animal is a learner or non-learner
+    animal_days = widefield_animal_idx == ai;
+    is_learner = ~is_group_animal(find(animal_days, 1, 'first')); % Get learner status
+    
+    % Set color based on group
+    if is_learner
+        animal_color = cmPFC_plus;
+        group_label = 'mPFC+';
+    else
+        animal_color = cNonlearner;
+        group_label = 'mPFC-';
+    end
+    
+    % Get pre and post learning data for this animal
+    pre_mask = workflow_cat == protocol_idx & learning_index_animal == 0 & widefield_animal_idx == ai;
+    post_mask = workflow_cat == protocol_idx & learning_index_animal == 1 & widefield_animal_idx == ai;
+    
+    pre_data = data_to_plot(:, :, pre_mask);
+    post_data = data_to_plot(:, :, post_mask);
+    
+    % Skip if no data
+    if isempty(pre_data) && isempty(post_data)
+        fprintf('No data for animal %d\n', ai);
+        continue;
+    end
+    
+    % Average across days
+    mean_pre = nanmean(pre_data, 3);
+    mean_post = nanmean(post_data, 3);
+    
+    % Baseline subtract
+    baseline_sub_pre = mean_pre - nanmean(mean_pre(:, baseline_mask), 2);
+    baseline_sub_post = mean_post - nanmean(mean_post(:, baseline_mask), 2);
+    
+    % Get specific time window
+    timewindow_pre = plab.wf.svd2px(wf_U(:, :, 1:n_components), baseline_sub_pre(:, event_time_window_mask));
+    timewindow_post = plab.wf.svd2px(wf_U(:, :, 1:n_components), baseline_sub_post(:, event_time_window_mask));
+    
+    % Compute images
+    switch statistic
+        case 'max'
+            img_pre = max(timewindow_pre, [], 3);
+            img_post = max(timewindow_post, [], 3);
+        case 'mean'
+            img_pre = mean(timewindow_pre, 3);
+            img_post = mean(timewindow_post, 3);
+    end
+    
+    % Create figure with subplots
+    figure('Position', [100, 100, 1200, 500]);
+    
+    % Pre-learning
+    subplot(1, 2, 1);
+    imagesc(img_pre);
+    axis image off;
+    colormap(ap.colormap('PWG'));
+    clim([-clim_val, clim_val]);
+    title(sprintf('Animal %d Pre-Learning - %s', ai, group_label), 'Color', animal_color, 'FontWeight', 'bold');
+    ap.wf_draw('ccf');
+    
+    % Post-learning
+    subplot(1, 2, 2);
+    imagesc(img_post);
+    axis image off;
+    colormap(ap.colormap('PWG'));
+    clim([-clim_val, clim_val]);
+    title(sprintf('Animal %d Post-Learning - %s', ai, group_label), 'Color', animal_color, 'FontWeight', 'bold');
+    ap.wf_draw('ccf');
+    
+    % Overall figure title
+    sgtitle(sprintf('Animal %d: %s (%s)', ai, statistic, group_label), 'FontSize', 14, 'FontWeight', 'bold');
+end
+
+%% Plot baseline corrected CCF average/max of mPFC activity (Kernels) for each individual animal pre-post learning
+
+% Choose 'max' or 'mean' to plot
+statistic = 'max';
+
+% Define event and baseline time windows
+event_times = [0, 0.3];
+baseline_time_windows = [-0.1, 0];
+
+% Create logical masks for both
+event_time_window_mask = (added_time_Kernel > event_times(1) & added_time_Kernel < event_times(2));
+baseline_mask = (added_time_Kernel >= baseline_time_windows(1) & added_time_Kernel <= baseline_time_windows(2));
+
+% Define data to plot
+data_to_plot = right_stim_kernel;
+
+% Define protocol
+protocol_idx = 1;
+
+% Define colors
+cmPFC_plus = [0.3, 0.6, 0.3];      % Green for learners
+cNonlearner = [0.8, 0.3, 0.3];   % Red for non-learners
+
+% Get unique animals
+animals = unique(widefield_animal_idx);
+
+% Determine global color limit across all animals
+all_timewindow_data = [];
+
+for ai = animals(:)'
+    % Get pre and post learning data for this animal
+    pre_data = data_to_plot(:, :, workflow_cat == protocol_idx & learning_index_animal == 0 & widefield_animal_idx == ai);
+    post_data = data_to_plot(:, :, workflow_cat == protocol_idx & learning_index_animal == 1 & widefield_animal_idx == ai);
+    
+    if isempty(pre_data) && isempty(post_data), continue; end
+    
+    % Average across days
+    mean_pre = nanmean(pre_data, 3);
+    mean_post = nanmean(post_data, 3);
+    
+    % Baseline subtract
+    if ~isempty(pre_data)
+        baseline_sub_pre = mean_pre - nanmean(mean_pre(:, baseline_mask), 2);
+        timewindow_pre = plab.wf.svd2px(wf_U(:, :, 1:n_components), baseline_sub_pre(:, event_time_window_mask));
+        all_timewindow_data = [all_timewindow_data; timewindow_pre(:)];
+    end
+    
+    if ~isempty(post_data)
+        baseline_sub_post = mean_post - nanmean(mean_post(:, baseline_mask), 2);
+        timewindow_post = plab.wf.svd2px(wf_U(:, :, 1:n_components), baseline_sub_post(:, event_time_window_mask));
+        all_timewindow_data = [all_timewindow_data; timewindow_post(:)];
+    end
+end
+
+% Compute global color limit
+switch statistic
+    case 'max'
+        clim_val = 0.25 * max(abs(all_timewindow_data));
     case 'mean'
         clim_val = 0.5 * max(abs(all_timewindow_data));
 end
@@ -522,7 +636,7 @@ set(gca, 'FontSize', 11);
 grid on;
 hold off;
 
-sgtitle(sprintf('%s V Activity Aligned to Learning Day', ROI_name), ...
+sgtitle(sprintf('%s Kernel Activity Aligned to Learning Day (Right Stim)', ROI_name), ...
         'FontSize', 14, 'FontWeight', 'bold');
 
 %% Plot baseline corrected CCF average/max mPFC activity (V) comparing learners vs non-learners
@@ -752,41 +866,6 @@ clim([-clim_val, clim_val]);
 title(sprintf('Post-Learning %s Kernels — mPFC-', statistic));
 ap.wf_draw('ccf');
 
-%% Plot line variables setup
-
-% Define the time window in seconds (0 to 200ms)
-start_time = -0.5; % 0s (0ms)
-end_time = 0.5; % 0.2s (200ms)
-
-% data to index:  V×T×Ndays_total
-aligned_all = right_stim_v_stacked_data;
-
-% define the added time 
-added_time_V= added_time;
-added_time_Kernel= fliplr((-10:30)/30);
-
-% Find the corresponding indices in added_time for the time window
-event_time_window_mask = find(added_time_V >= start_time & added_time_V <= end_time);
-
-% % 1×T win vector in seconds
-t_for_plot = added_time_V(event_time_window_mask);
-
-
-right_mPFC_ROI_trace = permute( ...
-    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,event_time_window_mask,:),[],[], right_mPFC_ROI_mask), ...
-    [3,2,1] );   % gives Ndays_total × T
-left_mPFC_ROI_trace = permute( ...
-    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,event_time_window_mask,:),[],[], left_mPFC_ROI_mask), ...
-    [3,2,1] );   % same dims
-
-% For visual cortex
-right_ViS_ROI_trace = permute( ...
-    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,event_time_window_mask,:),[],[], right_ViS_ROI_mask), ...
-    [3,2,1] );   % gives Ndays_total × T
-
-left_ViS_ROI_trace = permute( ...
-    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,event_time_window_mask,:),[],[], left_ViS_ROI_mask), ...
-    [3,2,1] );   % gives Ndays_total × T
 
 
 %% Plot individual ROI traces for each animal

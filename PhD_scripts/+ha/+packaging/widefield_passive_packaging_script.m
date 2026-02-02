@@ -6,8 +6,10 @@
 %% Saves a passive data structure that includes V and Kernel activity for the lcr_passive protocol for all the different protocols
 
 % Define protocols
-protocols_to_run = {'visual_operant_lick_two_stim_right_move','visual_operant_lick_two_stim_static', 'visual_operant_lick_two_stim_right_move_big_stim',...
-    'visual_operant_lick_two_stim_static_big_stim','stim_wheel*'};
+% protocols_to_run = {'visual_operant_lick_two_stim_right_move','visual_operant_lick_two_stim_static', 'visual_operant_lick_two_stim_right_move_big_stim',...
+%     'visual_operant_lick_two_stim_static_big_stim','stim_wheel*'};
+
+protocols_to_run = {'passive_conditioning_habituation'};
 
 animal_list = {'DS017','HA005','HA006','HA007','HA008','HA009','HA010','HA011','HA012','HA013','HA014','HA015','AP030','AP031','AP032'};
 
@@ -222,8 +224,8 @@ load('passive_data_all_animals.mat');
 % load master_U
 wf_U= plab.wf.load_master_U;
 
-single_animal_data= cat(2,passive_data(15).widefield);
-right_stim_data= cat(3,single_animal_data(20:40).right_fourty_five_deg_big_stim_aligned_V);
+single_animal_data= cat(2,passive_data(1).widefield);
+right_stim_data= cat(3,single_animal_data(1:end).center_stim_aligned_V);
 
 mean_right_stim_data= nanmean(right_stim_data,3);
 

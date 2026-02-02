@@ -7,6 +7,7 @@ load("C:\Users\havgana\Desktop\DPhil\packaged_data\passive_data_all_animals_14_0
 load('C:\Users\havgana\Desktop\DPhil\packaged_data\behaviour_structure_all_animals_14_01_26.mat') % behaviour
 load('C:\Users\havgana\Desktop\DPhil\packaged_data\combined_sig_day_all_protocols_14_01_26.mat') % sig days
 
+
 % load master_U
 wf_U= plab.wf.load_master_U;
 
@@ -39,19 +40,20 @@ center_stim_v_stacked_data = ha.helper_func.pad_widefield_variable(widefield_cat
 
 right_stim_kernel = ha.helper_func.pad_widefield_variable(widefield_cat, 'right_stim_aligned_kernel');
 left_stim_kernel = ha.helper_func.pad_widefield_variable(widefield_cat, 'left_stim_aligned_kernel');
-center_stim_kernel = ha.helper_func.pad_widefield_variable(widefield_cat, 'center_stim_aligned_kernel')
+center_stim_kernel = ha.helper_func.pad_widefield_variable(widefield_cat, 'center_stim_aligned_kernel');
 
-% Verify dimensions match
-fprintf('\nWorkflow index: %d days\n', length(workflow_cat));
-fprintf('Learning index: %d days\n', length(learning_index_animal));
-fprintf('Animal index: %d days\n', length(widefield_animal_idx));
+% % Verify dimensions match
+% fprintf('\nWorkflow index: %d days\n', length(workflow_cat));
+% fprintf('Learning index: %d days\n', length(learning_index_animal));
+% fprintf('Animal index: %d days\n', length(widefield_animal_idx));
 
 
 %% Set up variables
 
 % only using n components
 n_components=200;
-kernel_n_compoe
+n_components_kernel= 100;
+
 % make protocol index (n all days x workflow number ordered)
 workflow_animal = cellfun(@(x) {x.workflow},{behaviour_data.recording_day},'uni',false);
 workflow_cat = grp2idx(horzcat(workflow_animal{:}));
@@ -63,12 +65,6 @@ learning_index_animal = vertcat(combined_sig_day_all_protocols{:});
 widefield_animal_idx = grp2idx(cell2mat(cellfun(@(animal,wf) repmat(animal,length(wf),1), ...
     {behaviour_data.animal_id},{passive_data.widefield},'uni',false)'));
 
-
-
-% For kernels
-right_stim_kernel= cat(3,widefield_cat.right_stim_aligned_kernel);
-center_stim_kernel= cat(3,widefield_cat.center_stim_aligned_kernel);
-left_stim_kernel= cat(3,widefield_cat.left_stim_aligned_kernel);
 
 % Group data by animal x protocol x learning day
 [right_stim_V_learn_avg,right_stim_V_learn_grp] = ...
@@ -88,9 +84,9 @@ unique_workflow_labels= unique(horzcat(workflow_animal{:}),"stable"); % unique w
 
 %% Plot line variables setup
 
-% Define the time window in seconds (0 to 200ms)
-start_time = -0.5; % 0s (0ms)
-end_time = 0.5; % 0.2s (200ms)
+% define event times
+event_times= [-0.5,0.75];
+baseline_time_windows = [-0.1, 0];
 
 % data to index:  V×T×Ndays_total
 aligned_all = center_stim_v_stacked_data;
@@ -100,26 +96,42 @@ added_time_V= added_time;
 added_time_Kernel= fliplr((-10:30)/30);
 
 % Find the corresponding indices in added_time for the time window
-event_time_window_mask = find(added_time_V >= start_time & added_time_V <= end_time);
+time_window_idx = find(added_time_V >= event_times(1) & added_time_V <= event_times(2));
+baseline_mask_idx = (added_time_V >= baseline_time_windows(1) & added_time_V <= baseline_time_windows(2));
 
 % % 1×T win vector in seconds
-t_for_plot = added_time_V(event_time_window_mask);
+t_for_plot = added_time_V(time_window_idx);
 
 
+% right mPFC
 right_mPFC_ROI_trace = permute( ...
-    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,event_time_window_mask,:),[],[], right_mPFC_ROI_mask), ...
+    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,time_window_idx,:),[],[], right_mPFC_ROI_mask), ...
     [3,2,1] );   % gives Ndays_total × T
+
+right_mPFC_ROI_baseline=permute( ...
+    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,baseline_mask_idx,:),[],[], right_mPFC_ROI_mask), ...
+    [3,2,1] );   % gives Ndays_total × T
+
+right_mPFC_ROI_trace= right_mPFC_ROI_trace- mean(right_mPFC_ROI_baseline,2);
+
+% left mPFC
 left_mPFC_ROI_trace = permute( ...
-    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,event_time_window_mask,:),[],[], left_mPFC_ROI_mask), ...
+    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,time_window_idx,:),[],[], left_mPFC_ROI_mask), ...
     [3,2,1] );   % same dims
+
+left_mPFC_ROI_baseline=permute( ...
+    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,baseline_mask_idx,:),[],[], left_mPFC_ROI_mask), ...
+    [3,2,1] );   % gives Ndays_total × T
+
+left_mPFC_ROI_trace= left_mPFC_ROI_trace- mean(left_mPFC_ROI_baseline,2);
 
 % For visual cortex
 right_ViS_ROI_trace = permute( ...
-    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,event_time_window_mask,:),[],[], right_ViS_ROI_mask), ...
+    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,time_window_idx,:),[],[], right_ViS_ROI_mask), ...
     [3,2,1] );   % gives Ndays_total × T
 
 left_ViS_ROI_trace = permute( ...
-    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,event_time_window_mask,:),[],[], left_ViS_ROI_mask), ...
+    ap.wf_roi(wf_U(:,:,1:n_components), aligned_all(:,time_window_idx,:),[],[], left_ViS_ROI_mask), ...
     [3,2,1] );   % gives Ndays_total × T
 
 
@@ -132,15 +144,7 @@ left_ViS_ROI_trace = permute( ...
 % animals that have not learned the static but learned the right
 group_animals = {'DS017','HA006','HA007','HA009','HA013','HA014','HA015','AP030','AP031','AP032'};
 
-% Create a list of animal IDs repeated per recording day
-animal_ids_all_days = cellfun(@(animal, wf) repmat({animal}, length(wf), 1), ...
-    {behaviour_data.animal_id}, {passive_data.widefield}, 'UniformOutput', false);
-
-% Convert to column vector
-animal_ids_all_days_stacked = vertcat(animal_ids_all_days{:});
-
-% Create a logical index for whether each row belongs to the group
-is_group_animal = ismember(animal_ids_all_days_stacked, group_animals);  % (n_days_all x 1)
+is_group_animal= ismember(animal_list(widefield_animal_idx), group_animals)';
 
 % pre post of workflow 3 (right move)
 pre = nanmean(center_stim_v_stacked_data(:,:,workflow_cat==1 & learning_index_animal==0 & is_group_animal==0 ),3);
@@ -164,20 +168,20 @@ axis image;
 animal_list;
 
 % pre post of workflow 3 (right move)
-pre = nanmean(right_stim_kernel(:,:,workflow_cat==1 & learning_index_animal==0 & widefield_animal_idx==2),3);
-post = nanmean(right_stim_kernel(:,:,workflow_cat==1 & learning_index_animal==1 & widefield_animal_idx==2),3);
+pre = nanmean(center_stim_v_stacked_data(:,:,workflow_cat==1 & learning_index_animal==0 & widefield_animal_idx==7),3);
+post = nanmean(center_stim_v_stacked_data(:,:,workflow_cat==1 & learning_index_animal==1 & widefield_animal_idx==7),3);
 
 added_time_Kernel=  fliplr((-10:30)/30);
 
 baseline_time_windows= [-0.1,0];
-baseline_mask = (added_time_Kernel >= baseline_time_windows(1)) & (added_time_Kernel <= baseline_time_windows(2));
+baseline_mask = (added_time>= baseline_time_windows(1)) & (added_time <= baseline_time_windows(2));
 
 
 % substract baseline
 pre_baseline_sub= pre- mean(pre(:,baseline_mask),2);
 post_baseline_sub= post- mean(post(:,baseline_mask),2);
 
-ap.imscroll([plab.wf.svd2px(wf_U(:,:,1:n_components),pre_baseline_sub),plab.wf.svd2px(wf_U(:,:,1:n_components),post_baseline_sub)],added_time_Kernel);
+ap.imscroll([plab.wf.svd2px(wf_U(:,:,1:n_components),pre_baseline_sub),plab.wf.svd2px(wf_U(:,:,1:n_components),post_baseline_sub)],added_time);
 clim([-max(abs(clim)), max(abs(clim))]);
 colormap(ap.colormap( ...
     'PWG'));
@@ -201,7 +205,7 @@ baseline_mask = (added_time >= baseline_time_windows(1) & added_time <= baseline
 data_to_plot = right_stim_kernel;
 
 % Define protocol
-protocol_idx = 1;
+protocol_idx = 2;
 
 % Define colors
 cmPFC_plus = [0.3, 0.6, 0.3];      % Green for learners
@@ -378,7 +382,7 @@ end
 % Compute global color limit
 switch statistic
     case 'max'
-        clim_val = 0.5 * max(abs(all_timewindow_data));
+        clim_val = 0.25 * max(abs(all_timewindow_data));
     case 'mean'
         clim_val = 0.5 * max(abs(all_timewindow_data));
 end
@@ -635,7 +639,7 @@ set(gca, 'FontSize', 11);
 grid on;
 hold off;
 
-sgtitle(sprintf('%s V Activity Aligned to Learning Day (Centeral Stim)', ROI_name), ...
+sgtitle(sprintf('%s Kernel Activity Aligned to Learning Day (Right Stim)', ROI_name), ...
         'FontSize', 14, 'FontWeight', 'bold');
 
 %% Plot baseline corrected CCF average/max mPFC activity (V) comparing learners vs non-learners
@@ -816,7 +820,7 @@ switch statistic
     case 'mean'
         ref_vals = mean(reshape(all_vals,[],size(timewindow_mean_pre_learning_learners,3)),2);
 end
-clim_val = 0.65* max(abs(ref_vals));
+clim_val = 0.35* max(abs(ref_vals));
 
 % For creating a colorbar
 figure;
@@ -865,6 +869,201 @@ clim([-clim_val, clim_val]);
 title(sprintf('Post-Learning %s Kernels — mPFC-', statistic));
 ap.wf_draw('ccf');
 
+
+%% Plot a bar plot of the pre-post activity change seperated by mPFC+ /mPFC-
+
+% ===== PRE-POST LEARNING COMPARISON PER ANIMAL =====
+
+% Define which ROI to plot
+ROI_trace = left_mPFC_ROI_trace; % or left_mPFC_ROI_trace, etc.
+ROI_name = 'left mPFC';
+
+% Define protocol
+protocol_idx = 1;
+
+
+% Response window for computing activity
+response_window = t_for_plot >= 0 & t_for_plot <= 0.35;
+
+% Get unique animals
+animals = unique(widefield_animal_idx);
+
+% Storage for pre/post data
+learner_pre = [];
+learner_post = [];
+learner_ids = [];
+
+nonlearner_pre = [];
+nonlearner_post = [];
+nonlearner_ids = [];
+
+% Extract pre/post data for each animal
+for ai = animals(:)'
+    % Get days for this animal in the protocol
+    animal_mask = (widefield_animal_idx == ai) & (workflow_cat == protocol_idx);
+    animal_days = find(animal_mask);
+    
+    if isempty(animal_days), continue; end
+    
+    % Determine if learner or non-learner
+    is_learner = ~is_group_animal(animal_days(1));
+    
+    % Get pre-learning days
+    pre_mask = animal_mask & (learning_index_animal == 0);
+    pre_traces = ROI_trace(pre_mask, :);
+    
+    % Get post-learning days
+    post_mask = animal_mask & (learning_index_animal == 1);
+    post_traces = ROI_trace(post_mask, :);
+    
+    % Skip if missing either pre or post
+    if isempty(pre_traces) || isempty(post_traces)
+        continue;
+    end
+    
+    % Compute mean activity across days (max in response window)
+    pre_activity = mean(max(pre_traces(:, response_window), [], 2));
+    post_activity = mean(max(post_traces(:, response_window), [], 2));
+    
+    % Store based on group
+    if is_learner
+        learner_pre = [learner_pre; pre_activity];
+        learner_post = [learner_post; post_activity];
+        learner_ids = [learner_ids; ai];
+    else
+        nonlearner_pre = [nonlearner_pre; pre_activity];
+        nonlearner_post = [nonlearner_post; post_activity];
+        nonlearner_ids = [nonlearner_ids; ai];
+    end
+end
+
+% Create figure
+figure('Position', [100, 100, 1000, 600]);
+
+% Determine global y-limits
+all_data = [learner_pre; learner_post; nonlearner_pre; nonlearner_post];
+y_min = min(all_data) * 0.9;
+y_max = max(all_data) * 1.1;
+
+% Plot mPFC+ (Learners)
+subplot(1, 2, 1);
+hold on;
+
+n_learners = length(learner_pre);
+
+% Plot individual animals
+for i = 1:n_learners
+    % Plot line connecting pre to post
+    plot([1, 2], [learner_pre(i), learner_post(i)], '-', ...
+         'Color', [cmPFC_plus 0.4], 'LineWidth', 1.5);
+    
+    % Plot dots
+    scatter(1, learner_pre(i), 80, cmPFC_plus, 'filled', ...
+            'MarkerEdgeColor', 'k', 'LineWidth', 1);
+    scatter(2, learner_post(i), 80, cmPFC_plus, 'filled', ...
+            'MarkerEdgeColor', 'k', 'LineWidth', 1);
+end
+
+% Plot group means
+mean_pre = mean(learner_pre);
+mean_post = mean(learner_post);
+
+plot([0.7, 1.3], [mean_pre, mean_pre], 'k-', 'LineWidth', 3);
+plot([1.7, 2.3], [mean_post, mean_post], 'k-', 'LineWidth', 3);
+
+% Formatting
+xlim([0.5, 2.5]);
+ylim([y_min, y_max]);
+xticks([1, 2]);
+xticklabels({'Pre-Learning', 'Post-Learning'});
+ylabel('Peak Activity', 'FontSize', 12, 'FontWeight', 'bold');
+title(sprintf('mPFC+ Animals (n=%d)', n_learners), 'FontSize', 13, 'FontWeight', 'bold');
+set(gca, 'FontSize', 11);
+grid on;
+box on;
+hold off;
+% 
+% % Add significance test
+% [~, p_learner] = ttest(learner_pre, learner_post);
+% if p_learner < 0.05
+%     y_sig = y_max * 0.95;
+%     plot([1, 2], [y_sig, y_sig], 'k-', 'LineWidth', 1.5);
+%     if p_learner < 0.001
+%         text(1.5, y_sig*1.02, '***', 'HorizontalAlignment', 'center', 'FontSize', 14);
+%     elseif p_learner < 0.01
+%         text(1.5, y_sig*1.02, '**', 'HorizontalAlignment', 'center', 'FontSize', 14);
+%     else
+%         text(1.5, y_sig*1.02, '*', 'HorizontalAlignment', 'center', 'FontSize', 14);
+%     end
+% end
+
+% Plot mPFC- (Non-learners)
+subplot(1, 2, 2);
+hold on;
+
+n_nonlearners = length(nonlearner_pre);
+
+% Plot individual animals
+for i = 1:n_nonlearners
+    % Plot line connecting pre to post
+    plot([1, 2], [nonlearner_pre(i), nonlearner_post(i)], '-', ...
+         'Color', [cmPFC_minus, 0.4], 'LineWidth', 1.5);
+    
+    % Plot dots
+    scatter(1, nonlearner_pre(i), 80, cmPFC_minus, 'filled', ...
+            'MarkerEdgeColor', 'k', 'LineWidth', 1);
+    scatter(2, nonlearner_post(i), 80, cmPFC_minus, 'filled', ...
+            'MarkerEdgeColor', 'k', 'LineWidth', 1);
+end
+
+% Plot group means
+mean_pre = mean(nonlearner_pre);
+mean_post = mean(nonlearner_post);
+
+plot([0.7, 1.3], [mean_pre, mean_pre], 'k-', 'LineWidth', 3);
+plot([1.7, 2.3], [mean_post, mean_post], 'k-', 'LineWidth', 3);
+
+% Formatting
+xlim([0.5, 2.5]);
+ylim([y_min, y_max]);
+xticks([1, 2]);
+xticklabels({'Pre-Learning', 'Post-Learning'});
+ylabel('Peak Activity', 'FontSize', 12, 'FontWeight', 'bold');
+title(sprintf('mPFC- Animals (n=%d)', n_nonlearners), 'FontSize', 13, 'FontWeight', 'bold');
+set(gca, 'FontSize', 11);
+grid on;
+box on;
+hold off;
+
+% Add significance test
+[~, p_nonlearner] = ttest(nonlearner_pre, nonlearner_post);
+if p_nonlearner < 0.05
+    y_sig = y_max * 0.95;
+    plot([1, 2], [y_sig, y_sig], 'k-', 'LineWidth', 1.5);
+    if p_nonlearner < 0.001
+        text(1.5, y_sig*1.02, '***', 'HorizontalAlignment', 'center', 'FontSize', 14);
+    elseif p_nonlearner < 0.01
+        text(1.5, y_sig*1.02, '**', 'HorizontalAlignment', 'center', 'FontSize', 14);
+    else
+        text(1.5, y_sig*1.02, '*', 'HorizontalAlignment', 'center', 'FontSize', 14);
+    end
+end
+
+% Overall title
+sgtitle(sprintf('%s Activity: Pre vs Post Learning', ROI_name), ...
+        'FontSize', 14, 'FontWeight', 'bold');
+
+% Print statistics
+fprintf('\n===== PRE-POST COMPARISON =====\n');
+fprintf('mPFC+ (n=%d):\n', n_learners);
+fprintf('  Pre:  %.2e ± %.2e\n', mean(learner_pre), std(learner_pre));
+fprintf('  Post: %.2e ± %.2e\n', mean(learner_post), std(learner_post));
+fprintf('  p = %.4f (paired t-test)\n', p_learner);
+
+fprintf('\nmPFC- (n=%d):\n', n_nonlearners);
+fprintf('  Pre:  %.2e ± %.2e\n', mean(nonlearner_pre), std(nonlearner_pre));
+fprintf('  Post: %.2e ± %.2e\n', mean(nonlearner_post), std(nonlearner_post));
+fprintf('  p = %.4f (paired t-test)\n', p_nonlearner);
 
 
 %% Plot individual ROI traces for each animal
@@ -2170,48 +2369,25 @@ end
 
 %% Big Stim Protocol Analysis
 
-% Current issue is that packaging was incorrect, as if I had both big and
-% small passive, it override the other one. Fixed it- just run the
-% packaging script again
+
+% The padding works good for all the big stim protocols
+
+% How does the mPFC looks like for animals that went through big stim
+% protocol? compare pre-big stim activity to small stim vs post 
+
+% similarly examine whether the mPFC activity is specific to small or big
+% stim post-learning
 
 
-% How can I overcome the fact that in some days I only have one passive
-% recording? as it can create a mismatch between the index variables and
-% the actual recording data... The issue might be only with HA009 that has
-% two recording days where there is only big stim passive
 
 
 
-%% Load variables
 
-load('packaged_data\passive_data_all_animals_30_07.mat'); % wf passive
-load('packaged_data\behaviour_data_all_animals_30_07.mat') % behaviour
-load('packaged_data\combined_sig_day_all_protocols_30_07.mat') % sig days
-
-% load master_U
-wf_U= plab.wf.load_master_U;
-
-added_time = -0.5:0.03:1; % for passive
 
 
 % only using n components
 n_components=200;
-
-%%
-
-% Q: is there a difference mPFC activity pre-post learning big stim?
-
-% Does learning tracks just the big stim ? i.e., would we see mPFC activity
-% on to the big stim passive and not regular one?
-
-
-% for V - create a V x T x all days variable - right stim
-right_big_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.right_big_stim_aligned_V}, 'UniformOutput', false); % average across trials
-right_big_stim_v_stacked_data = cat(3, right_big_stim_v{:});
-
-
-
-%% Set up variables
+n_components_kernel= 100;
 
 % make protocol index (n all days x workflow number ordered)
 workflow_animal = cellfun(@(x) {x.workflow},{behaviour_data.recording_day},'uni',false);
@@ -2222,44 +2398,460 @@ learning_index_animal = vertcat(combined_sig_day_all_protocols{:});
 
 % Creates an animal index (n all days x animal number ordered)
 widefield_animal_idx = grp2idx(cell2mat(cellfun(@(animal,wf) repmat(animal,length(wf),1), ...
-    {passive_data.animal},{passive_data.widefield},'uni',false)'));
+    {behaviour_data.animal_id},{passive_data.widefield},'uni',false)'));
 
-% get all the widefield data
-widefield_cat= cat(2,passive_data.widefield); % concat
-
-% for V - create a V x T x all days variable - right stim
-right_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.right_stim_aligned_V}, 'UniformOutput', false); % average across trials
-right_stim_v_stacked_data = cat(3, right_stim_v{:});
+big_right_stim_v_stacked= ha.helper_func.pad_widefield_variable(widefield_cat, 'right_big_stim_aligned_V');
 
 
 
-% for V - create a V x T x all days variable - center stim
-center_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.center_stim_aligned_V}, 'UniformOutput', false); % average across trials
-center_stim_v_stacked_data = cat(3, center_stim_v{:});
 
-% for V - create a V x T x all days variable - left stim
-left_stim_v = cellfun(@(x) mean(x, 3), {widefield_cat.left_stim_aligned_V}, 'UniformOutput', false); % average across trials
-left_stim_v_stacked_data = cat(3, left_stim_v{:});
+% pre post of workflow 3 (right move)
+pre = nanmean(right_stim_v_stacked_data(:,:,workflow_cat==5 & learning_index_animal==0 & widefield_animal_idx==6),3);
+post = nanmean(right_stim_v_stacked_data(:,:,workflow_cat==5 & learning_index_animal==1 & widefield_animal_idx==6),3);
 
-% For kernels
-right_stim_kernel= cat(3,widefield_cat.right_stim_aligned_kernel);
-center_stim_kernel= cat(3,widefield_cat.center_stim_aligned_kernel);
-left_stim_kernel= cat(3,widefield_cat.left_stim_aligned_kernel);
+added_time_Kernel=  fliplr((-10:30)/30);
 
-% Group data by animal x protocol x learning day
-[right_stim_V_learn_avg,right_stim_V_learn_grp] = ...
-    ap.nestgroupfun({@nanmean,@nanmean,@nanmean}, permute(right_stim_v_stacked_data,[3,1,2]), ...
-    [] ,[widefield_animal_idx,workflow_cat,learning_index_animal]);
+baseline_time_windows= [-0.1,0];
+baseline_mask = (added_time >= baseline_time_windows(1)) & (added_time <= baseline_time_windows(2));
 
 
-[center_stim_V_learn_avg,center_stim_V_learn_grp] = ...
-    ap.nestgroupfun({@nanmean,@nanmean,@nanmean}, permute(center_stim_v_stacked_data,[3,1,2]), ...
-    [] ,[widefield_animal_idx,workflow_cat,learning_index_animal]);
+% substract baseline
+pre_baseline_sub= pre- mean(pre(:,baseline_mask),2);
+post_baseline_sub= post- mean(post(:,baseline_mask),2);
 
-% Create labels for plotting
+ap.imscroll([plab.wf.svd2px(wf_U(:,:,1:n_components),pre_baseline_sub),plab.wf.svd2px(wf_U(:,:,1:n_components),post_baseline_sub)],added_time);
+clim([-max(abs(clim)), max(abs(clim))]);
+colormap(ap.colormap( ...
+    'PWG'));
+axis image;
 
-animal_list= {behaviour_data.animal_id}; % get animal list
-unique_workflow_labels= unique(horzcat(workflow_animal{:}),"stable"); % unique workflows by order
+
+
+
+
+
+
+%% Habituation Analysis
+
+% Load and rename the habituation data
+passive_data_string= 'passive_data';
+passive_habituation_data = load("C:\Users\havgana\Desktop\DPhil\packaged_data\passive_habituation_data_all_animals_29_01.mat",passive_data_string);  % Function output form of LOAD
+passive_habituation_data = passive_habituation_data.(passive_data_string);
+
+added_time_Kernel= fliplr((-10:30)/30); % kernel added time
+
+% Create logical indecies for habituation
+animal_list = {'DS017','HA005','HA006','HA007','HA008','HA009','HA010','HA011','HA012','HA013','HA014','HA015','AP030','AP031','AP032'};
+
+% Creates an animal index (n all days x animal number ordered)
+widefield_animal_habituation_idx = grp2idx(cell2mat(cellfun(@(animal,wf) repmat(animal,length(wf),1), ...
+    animal_list,{passive_habituation_data.widefield},'uni',false)'));
+
+% define mPFC- or non-learners
+group_animals = {'DS017','HA006','HA007','HA009','HA013','HA014','HA015','AP030','AP031','AP032'};
+
+% Map indices back to animal names and check membership
+is_group_animal_habituation = ismember(animal_list(widefield_animal_habituation_idx), group_animals)';
+
+habituation_data_stacked = cat(2, passive_habituation_data.widefield); % stack 
+habituation_center_stim_v_stacked_data = ha.helper_func.pad_widefield_variable(habituation_data_stacked, 'center_stim_aligned_V'); % pad just to align to V xT x Days
+habituation_center_stim_kernel= ha.helper_func.pad_widefield_variable(habituation_data_stacked, 'center_stim_aligned_kernel');
+
+%% Plot Individual Animal CCF Max Activity for V for Habituation - Pre learning - Post learning 
+
+
+% Define protocol to analyze
+protocol_idx = 1; % Change as needed
+
+% Define time windows
+event_times = [0, 0.35];
+baseline_time_windows = [-0.1, 0];
+
+% Create masks
+event_time_window_mask = (added_time >= event_times(1)) & (added_time <= event_times(2));
+baseline_mask = (added_time >= baseline_time_windows(1)) & (added_time <= baseline_time_windows(2));
+
+% Define data source for main protocols
+data_to_plot = center_stim_v_stacked_data; % Change as needed
+
+% Loop through each animal
+for animal_idx = 1:length(animal_list)
+    
+    % HABITUATION
+    hab_mask = widefield_animal_habituation_idx == animal_idx;
+    
+    if ~any(hab_mask)
+        fprintf('No habituation data for animal %s\n', animal_list{animal_idx});
+        continue;
+    end
+    
+    hab_avg = nanmean(habituation_center_stim_v_stacked_data(:, :, hab_mask), 3);
+    hab_baseline_sub = hab_avg - mean(hab_avg(:, baseline_mask), 2);
+    hab_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), hab_baseline_sub(:, event_time_window_mask));
+    hab_max = max(hab_px, [], 3);
+    n_hab_days = sum(hab_mask);
+    
+    % PRE-LEARNING
+    pre_mask = (widefield_animal_idx == animal_idx) & (workflow_cat == protocol_idx) & (learning_index_animal == 0);
+    
+    if ~any(pre_mask)
+        fprintf('No pre-learning data for animal %s\n', animal_list{animal_idx});
+        continue;
+    end
+    
+    pre_avg = nanmean(data_to_plot(:, :, pre_mask), 3);
+    pre_baseline_sub = pre_avg - mean(pre_avg(:, baseline_mask), 2);
+    pre_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), pre_baseline_sub(:, event_time_window_mask));
+    pre_max = max(pre_px, [], 3);
+    n_pre_days = sum(pre_mask);
+    
+    % POST-LEARNING
+    post_mask = (widefield_animal_idx == animal_idx) & (workflow_cat == protocol_idx) & (learning_index_animal == 1);
+    
+    if ~any(post_mask)
+        fprintf('No post-learning data for animal %s\n', animal_list{animal_idx});
+    end
+    
+    post_avg = nanmean(data_to_plot(:, :, post_mask), 3);
+    post_baseline_sub = post_avg - mean(post_avg(:, baseline_mask), 2);
+    post_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), post_baseline_sub(:, event_time_window_mask));
+    post_max = max(post_px, [], 3);
+    n_post_days = sum(post_mask);
+    
+    % COMPUTE COLOR LIMIT
+    all_vals = [hab_px(:); pre_px(:); post_px(:)];
+    clim_val = 0.5 * max(abs(all_vals));
+    
+    % PLOT
+    figure('Position', [100, 100, 1500, 400]);
+    
+    % Habituation
+    subplot(1, 3, 1);
+    imagesc(hab_max);
+    axis image off;
+    colormap(ap.colormap('PWG'));
+    clim([-clim_val, clim_val]);
+    title(sprintf('Habituation (n=%d days)', n_hab_days), 'FontSize', 12, 'FontWeight', 'bold');
+    ap.wf_draw('ccf');
+    
+    % Pre-learning
+    subplot(1, 3, 2);
+    imagesc(pre_max);
+    axis image off;
+    colormap(ap.colormap('PWG'));
+    clim([-clim_val, clim_val]);
+    title(sprintf('Pre-Learning (n=%d days)', n_pre_days), 'FontSize', 12, 'FontWeight', 'bold');
+    ap.wf_draw('ccf');
+    
+    % Post-learning
+    subplot(1, 3, 3);
+    imagesc(post_max);
+    axis image off;
+    colormap(ap.colormap('PWG'));
+    clim([-clim_val, clim_val]);
+    title(sprintf('Post-Learning (n=%d days)', n_post_days), 'FontSize', 12, 'FontWeight', 'bold');
+    ap.wf_draw('ccf');
+    
+    % Overall title
+    sgtitle(sprintf('Animal %s - Max Activity (%.0f-%.0fms)', ...
+            animal_list{animal_idx}, event_times(1)*1000, event_times(2)*1000), ...
+            'FontSize', 14, 'FontWeight', 'bold');
+    
+    % Add colorbar
+    colorbar('Position', [0.92, 0.3, 0.015, 0.4]);
+end
+
+%% Plot Group Averages 
+
+
+% Define protocol to analyze
+protocol_idx = 1;
+
+% Define time windows
+event_times = [0, 0.35];
+baseline_time_windows = [-0.1, 0];
+
+
+% Create masks
+event_time_window_mask = (added_time_Kernel >= event_times(1)) & (added_time_Kernel <= event_times(2));
+baseline_mask = (added_time_Kernel >= baseline_time_windows(1)) & (added_time_Kernel <= baseline_time_windows(2));
+
+% Define data source
+data_to_plot = center_stim_kernel;
+habituation_data= habituation_center_stim_kernel;
+
+% ===== COMPUTE GROUP AVERAGES =====
+
+% mPFC+ (Learners)
+hab_learner = nanmean(habituation_data(:, :, is_group_animal_habituation == 0), 3);
+pre_learner = nanmean(data_to_plot(:, :, (workflow_cat == protocol_idx) & (learning_index_animal == 0) & (is_group_animal == 0)), 3);
+post_learner = nanmean(data_to_plot(:, :, (workflow_cat == protocol_idx) & (learning_index_animal == 1) & (is_group_animal == 0)), 3);
+
+% mPFC- (Non-learners)
+hab_nonlearner = nanmean(habituation_data(:, :, is_group_animal_habituation == 1), 3);
+pre_nonlearner = nanmean(data_to_plot(:, :, (workflow_cat == protocol_idx) & (learning_index_animal == 0) & (is_group_animal == 1)), 3);
+post_nonlearner = nanmean(data_to_plot(:, :, (workflow_cat == protocol_idx) & (learning_index_animal == 1) & (is_group_animal == 1)), 3);
+
+% ===== BASELINE SUBTRACT =====
+
+% mPFC+
+hab_learner_baseline_sub = hab_learner - mean(hab_learner(:, baseline_mask), 2);
+pre_learner_baseline_sub = pre_learner - mean(pre_learner(:, baseline_mask), 2);
+post_learner_baseline_sub = post_learner - mean(post_learner(:, baseline_mask), 2);
+
+% mPFC-
+hab_nonlearner_baseline_sub = hab_nonlearner - mean(hab_nonlearner(:, baseline_mask), 2);
+pre_nonlearner_baseline_sub = pre_nonlearner - mean(pre_nonlearner(:, baseline_mask), 2);
+post_nonlearner_baseline_sub = post_nonlearner - mean(post_nonlearner(:, baseline_mask), 2);
+
+% ===== CONVERT TO PIXEL SPACE =====
+
+% mPFC+
+hab_learner_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), hab_learner_baseline_sub(:, event_time_window_mask));
+pre_learner_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), pre_learner_baseline_sub(:, event_time_window_mask));
+post_learner_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), post_learner_baseline_sub(:, event_time_window_mask));
+
+% mPFC-
+hab_nonlearner_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), hab_nonlearner_baseline_sub(:, event_time_window_mask));
+pre_nonlearner_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), pre_nonlearner_baseline_sub(:, event_time_window_mask));
+post_nonlearner_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), post_nonlearner_baseline_sub(:, event_time_window_mask));
+
+% ===== MAX PROJECTION =====
+
+% mPFC+
+hab_learner_max = max(hab_learner_px, [], 3);
+pre_learner_max = max(pre_learner_px, [], 3);
+post_learner_max = max(post_learner_px, [], 3);
+
+% mPFC-
+hab_nonlearner_max = max(hab_nonlearner_px, [], 3);
+pre_nonlearner_max = max(pre_nonlearner_px, [], 3);
+post_nonlearner_max = max(post_nonlearner_px, [], 3);
+
+% ===== COMPUTE GLOBAL COLOR LIMIT =====
+
+all_vals = [hab_learner_px(:); pre_learner_px(:); post_learner_px(:); ...
+            hab_nonlearner_px(:); pre_nonlearner_px(:); post_nonlearner_px(:)];
+clim_val = 0.5 * max(abs(all_vals));
+
+% ===== PLOT =====
+
+figure('Position', [100, 100, 1500, 800]);
+
+% Row 1: mPFC+ (Learners)
+% Habituation
+subplot(2, 3, 1);
+imagesc(hab_learner_max);
+axis image off;
+colormap(ap.colormap('PWG'));
+clim([-clim_val, clim_val]);
+title('mPFC+ Habituation', 'FontSize', 12, 'FontWeight', 'bold', 'Color', cmPFC_plus );
+ap.wf_draw('ccf');
+
+% Pre-learning
+subplot(2, 3, 2);
+imagesc(pre_learner_max);
+axis image off;
+colormap(ap.colormap('PWG'));
+clim([-clim_val, clim_val]);
+title('mPFC+ Pre-Learning', 'FontSize', 12, 'FontWeight', 'bold', 'Color', cmPFC_plus);
+ap.wf_draw('ccf');
+
+% Post-learning
+subplot(2, 3, 3);
+imagesc(post_learner_max);
+axis image off;
+colormap(ap.colormap('PWG'));
+clim([-clim_val, clim_val]);
+title('mPFC+ Post-Learning', 'FontSize', 12, 'FontWeight', 'bold', 'Color', cmPFC_plus);
+ap.wf_draw('ccf');
+
+% Row 2: mPFC- (Non-learners)
+% Habituation
+subplot(2, 3, 4);
+imagesc(hab_nonlearner_max);
+axis image off;
+colormap(ap.colormap('PWG'));
+clim([-clim_val, clim_val]);
+title('mPFC- Habituation', 'FontSize', 12, 'FontWeight', 'bold', 'Color', cmPFC_minus);
+ap.wf_draw('ccf');
+
+% Pre-learning
+subplot(2, 3, 5);
+imagesc(pre_nonlearner_max);
+axis image off;
+colormap(ap.colormap('PWG'));
+clim([-clim_val, clim_val]);
+title('mPFC- Pre-Learning', 'FontSize', 12, 'FontWeight', 'bold', 'Color', cmPFC_minus);
+ap.wf_draw('ccf');
+
+% Post-learning
+subplot(2, 3, 6);
+imagesc(post_nonlearner_max);
+axis image off;
+colormap(ap.colormap('PWG'));
+clim([-clim_val, clim_val]);
+title('mPFC- Post-Learning', 'FontSize', 12, 'FontWeight', 'bold', 'Color', cmPFC_minus);
+ap.wf_draw('ccf');
+
+% Overall title
+sgtitle(sprintf('Group Averages: Max Activity (%.0f-%.0fms)', ...
+        event_times(1)*1000, event_times(2)*1000), ...
+        'FontSize', 14, 'FontWeight', 'bold');
+
+% Add colorbar
+colorbar('Position', [0.92, 0.3, 0.015, 0.4]);
+
+
+%%
+
+%% ===== GROUP CCF VIDEOS: HABITUATION - PRE - POST =====
+
+% Define protocol to analyze
+protocol_idx = 1;
+
+% Define baseline window
+baseline_time_windows = [-0.1, 0];
+baseline_mask = (added_time_Kernel >= baseline_time_windows(1)) & (added_time_Kernel <= baseline_time_windows(2));
+
+% Define data source
+data_to_plot = center_stim_kernel;
+habituation_data= habituation_center_stim_kernel;
+
+
+% ===== mPFC+ (Learners) =====
+
+% Habituation
+hab_learner = nanmean(habituation_data(:, :, is_group_habituation == 0), 3);
+hab_learner_baseline_sub = hab_learner - mean(hab_learner(:, baseline_mask), 2);
+hab_learner_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), hab_learner_baseline_sub);
+
+% Pre-learning
+pre_learner = nanmean(data_to_plot(:, :, (workflow_cat == protocol_idx) & (learning_index_animal == 0) & (is_group_animal == 0)), 3);
+pre_learner_baseline_sub = pre_learner - mean(pre_learner(:, baseline_mask), 2);
+pre_learner_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), pre_learner_baseline_sub);
+
+% Post-learning
+post_learner = nanmean(data_to_plot(:, :, (workflow_cat == protocol_idx) & (learning_index_animal == 1) & (is_group_animal == 0)), 3);
+post_learner_baseline_sub = post_learner - mean(post_learner(:, baseline_mask), 2);
+post_learner_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), post_learner_baseline_sub);
+
+% Stack as 4D: X × Y × Time × Condition
+learner_4D = cat(4, hab_learner_px, pre_learner_px, post_learner_px);
+
+%% ===== mPFC- (Non-learners) =====
+
+% Habituation
+hab_nonlearner = nanmean(habituation_kernel(:, :, is_group_habituation == 1), 3);
+hab_nonlearner_baseline_sub = hab_nonlearner - mean(hab_nonlearner(:, baseline_mask), 2);
+hab_nonlearner_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), hab_nonlearner_baseline_sub);
+
+% Pre-learning
+pre_nonlearner = nanmean(data_to_plot(:, :, (workflow_cat == protocol_idx) & (learning_index_animal == 0) & (is_group_animal == 1)), 3);
+pre_nonlearner_baseline_sub = pre_nonlearner - mean(pre_nonlearner(:, baseline_mask), 2);
+pre_nonlearner_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), pre_nonlearner_baseline_sub);
+
+% Post-learning
+post_nonlearner = nanmean(data_to_plot(:, :, (workflow_cat == protocol_idx) & (learning_index_animal == 1) & (is_group_animal == 1)), 3);
+post_nonlearner_baseline_sub = post_nonlearner - mean(post_nonlearner(:, baseline_mask), 2);
+post_nonlearner_px = plab.wf.svd2px(wf_U(:, :, 1:n_components), post_nonlearner_baseline_sub);
+
+% Stack as 4D: X × Y × Time × Condition
+nonlearner_4D = cat(4, hab_nonlearner_px, pre_nonlearner_px, post_nonlearner_px);
+
+%% ===== COMPUTE GLOBAL COLOR LIMIT =====
+
+all_vals = [learner_4D(:); nonlearner_4D(:)];
+clim_val = max(abs(all_vals));
+
+%% ===== PLOT mPFC+ =====
+
+figure('Name', 'mPFC+ Group');
+ap.imscroll(learner_4D, added_time_Kernel);
+clim([-clim_val, clim_val]);
+colormap(ap.colormap('PWG'));
+axis image;
+title('mPFC+ Group: Habituation → Pre-Learning → Post-Learning');
+ap.wf_draw('ccf');
+
+%% ===== PLOT mPFC- =====
+
+figure('Name', 'mPFC- Group');
+ap.imscroll(nonlearner_4D, added_time_Kernel);
+clim([-clim_val, clim_val]);
+colormap(ap.colormap('PWG'));
+axis image;
+title('mPFC- Group: Habituation → Pre-Learning → Post-Learning');
+ap.wf_draw('ccf');
+
+fprintf('\n===== CCF Videos Created =====\n');
+fprintf('Use slider to navigate through:\n');
+fprintf('  Condition 1: Habituation\n');
+fprintf('  Condition 2: Pre-Learning\n');
+fprintf('  Condition 3: Post-Learning\n');
+%% Do CCF videos of averages
+
+% Average across all days for this animal
+center_stim_activity = nanmean(center_stim_kernel(:, :,is_group_animal==1), 3);
+
+% Subtract baseline
+center_stim_activity_baseline_sub = center_stim_activity - mean(center_stim_activity(:, baseline_mask), 2);
+
+% Plot
+ap.imscroll(plab.wf.svd2px(wf_U(:, :, 1:n_components), center_stim_activity_baseline_sub), added_time_Kernel);
+clim([-max(abs(clim)), max(abs(clim))]);
+colormap(ap.colormap('PWG'));
+axis image;
+title(sprintf('mPFC+ group'));
+
+%% Plot individual animal CCF videos averaged for all habituation days
+
+
+added_time_Kernel=  fliplr((-10:30)/30);
+
+baseline_time_windows = [-0.1, 0];
+baseline_mask = (added_time_Kernel >= baseline_time_windows(1)) & (added_time_Kernel <= baseline_time_windows(2));
+
+% Loop through each animal
+for animal_idx = 1:length(animal_list)
+    % Average across all days for this animal
+    center_stim_activity = nanmean(center_stim_v_stacked_data(:, :, widefield_animal_idx == animal_idx), 3);
+    
+    % Subtract baseline
+    center_stim_activity_baseline_sub = center_stim_activity - mean(center_stim_activity(:, baseline_mask), 2);
+    
+    % Plot
+    ap.imscroll(plab.wf.svd2px(wf_U(:, :, 1:n_components), center_stim_activity_baseline_sub), added_time);
+    clim([-max(abs(clim)), max(abs(clim))]);
+    colormap(ap.colormap('PWG'));
+    axis image;
+    title(sprintf('Animal %s', animal_list{animal_idx}));
+end
+
+%% Plot mPFC+/ mPFC- seperated CCF videos
+
+% animals that have not learned the static but learned the right
+group_animals = {'DS017','HA006','HA007','HA009','HA013','HA014','HA015','AP030','AP031','AP032'};
+
+% Create a list of animal IDs repeated per recording day
+animal_ids_all_days = cellfun(@(animal, wf) repmat({animal}, length(wf), 1), ...
+    animal_list, {passive_data.widefield}, 'UniformOutput', false);
+
+% Convert to column vector
+animal_ids_all_days_stacked = vertcat(animal_ids_all_days{:});
+
+% Create a logical index for whether each row belongs to the group
+is_group_animal = ismember(animal_ids_all_days_stacked, group_animals);  % (n_days_all x 1)
+
+
+
+
+
+%% 
+
+% load the passive data for the behaviour
+% create the indecies as before
+% plot individual animal CCF activity habituation - pre-post 
 
 
 %% Archived
